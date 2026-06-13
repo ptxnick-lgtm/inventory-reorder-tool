@@ -31,8 +31,52 @@ function matchHeader(header: string): keyof typeof HEADER_ALIASES | null {
   return null;
 }
 
+// QuickBooks "Physical Inventory Worksheet" CSV export is NOT real CSV — each row
+// is one quoted string with columns separated by runs of spaces. Detect and handle it.
+function parseQuickBooksSpaceFormat(lines: string[]): ParseResult | null {
+  const rows: ParsedRow[] = [];
+  const unmatched: Record<string, number> = {};
+  let skipped = 0;
+  let matchedAny = false;
+
+  for (const raw of lines) {
+    const line = raw.trim().replace(/^"+|"+$/g, "").trim();
+    if (!line) continue;
+    const m = line.match(/^(-?\d+)\s+(.+)$/);
+    if (!m) continue;
+    const qoh = parseInt(m[1], 10);
+    if (Number.isNaN(qoh)) continue;
+
+    let rest = m[2];
+    const poMatch = rest.match(/\s+(-?\d+)\s*$/);
+    let po = 0;
+    if (poMatch) {
+      po = parseInt(poMatch[1], 10);
+      rest = rest.slice(0, poMatch.index).trimEnd();
+    }
+    const parts = rest.split(/\s{2,}/).map((s) => s.trim()).filter(Boolean);
+    if (parts.length < 2) { continue; }
+
+    const vendorRaw = parts[parts.length - 1];
+    const itemRaw = parts.slice(0, -1).join(" ");
+    const vendor = canonicalVendor(vendorRaw);
+    if (!vendor) { unmatched[vendorRaw] = (unmatched[vendorRaw] || 0) + 1; continue; }
+    if (!itemRaw) { skipped++; continue; }
+
+    matchedAny = true;
+    rows.push({ qoh, item: itemRaw, vendor, po: Number.isNaN(po) ? 0 : po });
+  }
+
+  if (!matchedAny) return null;
+  return {
+    rows,
+    unmatchedVendors: Object.entries(unmatched).map(([raw, count]) => ({ raw, count })),
+    skipped,
+    detectedDate: null,
+  };
+}
+
 function rowsToTable(raw: string[][]): ParseResult {
-  // Find the header row: the first row containing both an item-ish and a vendor-ish column.
   let headerIdx = -1;
   let colMap: Partial<Record<string, number>> = {};
   for (let i = 0; i < Math.min(raw.length, 15); i++) {
@@ -73,10 +117,7 @@ function rowsToTable(raw: string[][]): ParseResult {
     const po = Number.isNaN(parseInt(poRaw, 10)) ? 0 : parseInt(poRaw, 10);
 
     const vendor = canonicalVendor(vendorRaw);
-    if (!vendor) {
-      unmatched[vendorRaw] = (unmatched[vendorRaw] || 0) + 1;
-      continue;
-    }
+    if (!vendor) { unmatched[vendorRaw] = (unmatched[vendorRaw] || 0) + 1; continue; }
     if (!itemRaw) { skipped++; continue; }
 
     rows.push({ qoh, item: itemRaw, vendor, po });
@@ -91,6 +132,14 @@ function rowsToTable(raw: string[][]): ParseResult {
 }
 
 export function parseCSVText(text: string): ParseResult {
+  const lines = text.split(/\r?\n/);
+  // Try the QuickBooks space-aligned format first.
+  const qb = parseQuickBooksSpaceFormat(lines);
+  if (qb && qb.rows.length > 0) {
+    qb.detectedDate = detectDateFromText(text);
+    return qb;
+  }
+  // Fall back to a normal comma-separated CSV.
   const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
   const result = rowsToTable(parsed.data as string[][]);
   result.detectedDate = detectDateFromText(text);
@@ -101,8 +150,21 @@ export function parseXLSX(buf: ArrayBuffer): ParseResult {
   const wb = XLSX.read(buf, { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false, defval: "" });
-  const result = rowsToTable(raw as string[][]);
   const flat = (raw as string[][]).flat().join(" ");
+
+  // If Excel collapsed everything into one column per row (QuickBooks space format
+  // saved as xlsx), try the space parser on the joined rows.
+  const looksSingleCol = (raw as string[][]).slice(0, 10).every((r) => r.filter((c) => String(c).trim()).length <= 1);
+  if (looksSingleCol) {
+    const lines = (raw as string[][]).map((r) => r.map((c) => String(c || "")).join(" "));
+    const qb = parseQuickBooksSpaceFormat(lines);
+    if (qb && qb.rows.length > 0) {
+      qb.detectedDate = detectDateFromText(flat);
+      return qb;
+    }
+  }
+
+  const result = rowsToTable(raw as string[][]);
   result.detectedDate = detectDateFromText(flat);
   return result;
 }
