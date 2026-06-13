@@ -51,9 +51,9 @@ export default function Page() {
     try {
       let result: ParseResult;
       if (file.name.toLowerCase().endsWith(".csv")) {
-        result = parseCSVText(await file.text());
+        result = parseCSVText(await file.text(), file.name);
       } else if (/\.xlsx?$/.test(file.name.toLowerCase())) {
-        result = parseXLSX(await file.arrayBuffer());
+        result = parseXLSX(await file.arrayBuffer(), file.name);
       } else {
         throw new Error("Please upload a .csv or .xlsx file (exported from QuickBooks).");
       }
