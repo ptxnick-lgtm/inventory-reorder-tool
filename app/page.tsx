@@ -67,6 +67,17 @@ export default function Page() {
     products.forEach((p) => m.set(p.item, p));
     return m;
   }, [products]);
+  // Revenue earned between each pair of consecutive snapshots (units sold × price).
+  const revenueSeries = useMemo(() => {
+    const out: { date: string; revenue: number }[] = [];
+    for (let i = 1; i < importedDates.length; i++) {
+      const ch = inventoryChanges(allSnapshots, importedDates[i], importedDates[i - 1], excludedNames);
+      let rev = 0;
+      for (const c of ch) if (c.delta < 0) rev += -c.delta * (productMap.get(c.item)?.price || 0);
+      out.push({ date: importedDates[i], revenue: rev });
+    }
+    return out;
+  }, [allSnapshots, importedDates, excludedNames, productMap]);
   const catalogueItems = useMemo(() => {
     const seen = new Map<string, string>();
     allSnapshots.forEach((s) => { if (s.item && !seen.has(s.item)) seen.set(s.item, s.vendor); });
@@ -132,8 +143,11 @@ export default function Page() {
 
   return (
     <main style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Inventory Reorder Tool</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <h1 className="western" style={{ fontSize: 30, margin: 0, color: RED, display: "flex", alignItems: "center", gap: 12 }}>
+          <span aria-hidden="true" style={{ fontSize: 30 }}>🐎</span>
+          Inventory Reorder Tool
+        </h1>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => { setShowPricing(false); setShowSettings(!showSettings); }} style={btnGhost}>
             {showSettings ? "Close settings" : "Vendor settings"}
@@ -143,8 +157,9 @@ export default function Page() {
           </button>
         </div>
       </div>
-      <p style={{ color: "#666", marginTop: 6 }}>
-        Export your inventory from QuickBooks as CSV or Excel, drop it below, and get a sorted reorder list.
+      <div style={{ height: 3, background: RED, borderRadius: 2, margin: "10px 0 0", maxWidth: 200 }} />
+      <p style={{ color: "#6b4a2b", marginTop: 10, fontStyle: "italic" }}>
+        Wrangle your QuickBooks inventory — drop a CSV or Excel export below and get a sorted reorder list, partner.
       </p>
 
       {error && <div style={errBox}>{error}</div>}
@@ -158,7 +173,7 @@ export default function Page() {
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
-          style={{ ...dropZone, borderColor: dragOver ? "#2b6cb0" : "#cbd5e0", background: dragOver ? "#ebf4ff" : "#fff" }}
+          style={{ ...dropZone, borderColor: dragOver ? RED : "#b08d57", background: dragOver ? "#f3e7cc" : "#fbf6ea" }}
         >
           {stage === "parsing" ? (
             <p>Reading {fileName}…</p>
@@ -218,6 +233,7 @@ export default function Page() {
           trend={trend}
           changes={changes}
           productMap={productMap}
+          revenueSeries={revenueSeries}
           activeDate={activeDate}
           prevDate={prevDate}
           importedDates={importedDates}
@@ -231,6 +247,12 @@ export default function Page() {
       {!classified && stage === "idle" && !error && (
         <p style={{ color: "#888", marginTop: 24 }}>No inventory uploaded yet. Drop your first file above to begin.</p>
       )}
+
+      <footer style={{ textAlign: "center", marginTop: 56, paddingTop: 16, borderTop: "1px solid #d8c6a0" }}>
+        <span aria-hidden="true" style={{ color: RED, opacity: 0.22, fontSize: 11, fontStyle: "italic", letterSpacing: 1 }}>
+          ⚘ love u mommy ⚘
+        </span>
+      </footer>
     </main>
   );
 }
@@ -240,6 +262,7 @@ interface DashboardProps {
   trend: SnapshotStat[];
   changes: InventoryChange[];
   productMap: Map<string, ProductRow>;
+  revenueSeries: { date: string; revenue: number }[];
   activeDate: string;
   prevDate: string | null;
   importedDates: string[];
@@ -251,7 +274,7 @@ interface DashboardProps {
 
 type View = "list" | "changes" | "insights" | "revenue";
 
-function Dashboard({ classified, trend, changes, productMap, activeDate, prevDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload }: DashboardProps) {
+function Dashboard({ classified, trend, changes, productMap, revenueSeries, activeDate, prevDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -279,9 +302,9 @@ function Dashboard({ classified, trend, changes, productMap, activeDate, prevDat
             style={{
               background: "none", border: "none", cursor: "pointer", fontSize: 15,
               padding: "10px 16px", marginBottom: -1,
-              color: view === key ? "#2b6cb0" : "#666",
+              color: view === key ? RED : "#7a5c3a",
               fontWeight: view === key ? 600 : 400,
-              borderBottom: view === key ? "2px solid #2b6cb0" : "2px solid transparent",
+              borderBottom: view === key ? `2px solid ${RED}` : "2px solid transparent",
             }}
           >
             {label}
@@ -304,7 +327,7 @@ function Dashboard({ classified, trend, changes, productMap, activeDate, prevDat
       )}
       {view === "changes" && <ChangesTab changes={changes} activeDate={activeDate} prevDate={prevDate} />}
       {view === "insights" && <Insights classified={classified} trend={trend} />}
-      {view === "revenue" && <RevenueTab classified={classified} changes={changes} productMap={productMap} prevDate={prevDate} />}
+      {view === "revenue" && <RevenueTab classified={classified} changes={changes} productMap={productMap} revenueSeries={revenueSeries} prevDate={prevDate} />}
     </div>
   );
 }
@@ -335,7 +358,7 @@ function TierTable({ items, tier }: { items: ClassifiedItem[]; tier: Tier }) {
                   <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
                   <td style={{ ...td, textAlign: "center" }}>{i.po}</td>
                   <td style={{ ...td, textAlign: "center" }}><Sparkline history={i.history} /></td>
-                  <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? "#2b6cb0" : "#bbb" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
+                  <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? RED : "#bbb" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
                   <td style={{ ...td, color: "#666", fontSize: 13 }}>{i.reason}</td>
                 </tr>
               ))}
@@ -413,8 +436,8 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
                   <span>{i.item} <span style={{ color: "#999" }}>· {i.vendor}</span></span>
                   <span style={{ color: "#555" }}>{(i.consumptionPerWeek || 0).toFixed(1)} / wk{i.weeksOfStock !== null ? ` · ${i.weeksOfStock.toFixed(1)} wks left` : ""}</span>
                 </div>
-                <div style={{ background: "#edf2f7", borderRadius: 4, height: 8 }}>
-                  <div style={{ width: `${Math.max(3, ((i.consumptionPerWeek || 0) / maxMover) * 100)}%`, background: "#2b6cb0", height: 8, borderRadius: 4 }} />
+                <div style={{ background: "#e2d2ac", borderRadius: 4, height: 8 }}>
+                  <div style={{ width: `${Math.max(3, ((i.consumptionPerWeek || 0) / maxMover) * 100)}%`, background: RED, height: 8, borderRadius: 4 }} />
                 </div>
               </div>
             ))}
@@ -475,10 +498,10 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
 
 function Kpi({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: string }) {
   return (
-    <div style={{ ...statCard, background: "#f7fafc" }}>
-      <div style={{ color: "#666", fontSize: 13 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: accent || "#1a202c" }}>{value}</div>
-      <div style={{ color: "#999", fontSize: 12 }}>{sub}</div>
+    <div style={{ ...statCard, background: "#f3e9d2" }}>
+      <div style={{ color: "#7a5c3a", fontSize: 13 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: accent || "#3a2a1a" }}>{value}</div>
+      <div style={{ color: "#9b8463", fontSize: 12 }}>{sub}</div>
     </div>
   );
 }
@@ -592,7 +615,33 @@ function money(n: number): string {
   return "$" + Math.round(n).toLocaleString();
 }
 
-function RevenueTab({ classified, changes, productMap, prevDate }: { classified: ClassifiedItem[]; changes: InventoryChange[]; productMap: Map<string, ProductRow>; prevDate: string | null }) {
+// Inline SVG revenue-over-time line chart (no chart library).
+function MoneyTrend({ data }: { data: { date: string; revenue: number }[] }) {
+  const W = 600, H = 190, padX = 48, padY = 20;
+  const max = Math.max(1, ...data.map((d) => d.revenue));
+  const x = (i: number) => padX + (i * (W - padX * 2)) / Math.max(1, data.length - 1);
+  const y = (v: number) => H - padY - (v / max) * (H - padY * 2);
+  const pts = data.map((d, i) => `${x(i)},${y(d.revenue)}`).join(" ");
+  const last = data[data.length - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Revenue per snapshot over time">
+      <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#d8c6a0" />
+      <text x={4} y={y(max) + 4} fontSize={11} fill="#9b8463">{money(max)}</text>
+      <text x={4} y={H - padY + 4} fontSize={11} fill="#9b8463">$0</text>
+      <polyline points={pts} fill="none" stroke="#1d7a55" strokeWidth={2.5} />
+      {data.map((d, i) => (
+        <g key={d.date}>
+          <circle cx={x(i)} cy={y(d.revenue)} r={3.5} fill="#1d7a55" />
+          <text x={x(i)} y={H - 4} fontSize={11} fill="#9b8463" textAnchor="middle">{d.date.slice(5)}</text>
+        </g>
+      ))}
+      <text x={x(data.length - 1)} y={y(last.revenue) - 8} fontSize={12} fill="#1d7a55" textAnchor="end" fontWeight={600}>{money(last.revenue)}</text>
+    </svg>
+  );
+}
+
+function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }: { classified: ClassifiedItem[]; changes: InventoryChange[]; productMap: Map<string, ProductRow>; revenueSeries: { date: string; revenue: number }[]; prevDate: string | null }) {
+  const totalRevenue = revenueSeries.reduce((s, r) => s + r.revenue, 0);
   let revenue = 0, cogs = 0, restockCost = 0;
   const sellers: { item: string; vendor: string; units: number; revenue: number }[] = [];
   for (const c of changes) {
@@ -640,6 +689,20 @@ function RevenueTab({ classified, changes, productMap, prevDate }: { classified:
         </>
       ) : (
         <div style={{ ...card, marginTop: 12, color: "#666" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
+      )}
+
+      {revenueSeries.length >= 1 && (
+        <div style={{ ...card, marginTop: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 0, fontSize: 16 }}>Revenue over time</h3>
+            <span style={{ color: "#7a5c3a", fontSize: 13 }}>All snapshots total: <strong style={{ color: "#1d7a55" }}>{money(totalRevenue)}</strong></span>
+          </div>
+          {revenueSeries.length < 2 ? (
+            <p style={{ color: "#888", fontSize: 14, marginBottom: 0 }}>One day of sales so far. Upload more snapshots to chart the trend.</p>
+          ) : (
+            <div style={{ marginTop: 12 }}><MoneyTrend data={revenueSeries} /></div>
+          )}
+        </div>
       )}
 
       <p style={{ color: "#666", fontSize: 14, margin: "20px 0 0" }}>Current inventory value:</p>
@@ -787,13 +850,15 @@ function VendorSettings({ vendors, onChange }: { vendors: VendorRow[]; onChange:
   );
 }
 
-const dropZone: React.CSSProperties = { border: "2px dashed #cbd5e0", borderRadius: 12, padding: "48px 20px", textAlign: "center", marginTop: 24, transition: "all .15s" };
-const card: React.CSSProperties = { background: "#fff", borderRadius: 12, padding: 24, marginTop: 24, boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
-const statCard: React.CSSProperties = { background: "#fff", borderRadius: 10, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
-const btnPrimary: React.CSSProperties = { background: "#2b6cb0", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 14, cursor: "pointer", display: "inline-block" };
-const btnGhost: React.CSSProperties = { background: "#fff", color: "#2b6cb0", border: "1px solid #cbd5e0", borderRadius: 8, padding: "9px 16px", fontSize: 14, cursor: "pointer" };
-const input: React.CSSProperties = { border: "1px solid #cbd5e0", borderRadius: 6, padding: "7px 10px", fontSize: 14 };
-const th: React.CSSProperties = { padding: "8px 10px", fontWeight: 600, color: "#444" };
+// Old-western palette: barn red accent, leather/parchment surfaces, espresso ink.
+const RED = "#9b2226";
+const dropZone: React.CSSProperties = { border: "2px dashed #b08d57", borderRadius: 8, padding: "48px 20px", textAlign: "center", marginTop: 24, transition: "all .15s" };
+const card: React.CSSProperties = { background: "#fbf6ea", borderRadius: 8, padding: 24, marginTop: 24, border: "1px solid #d8c6a0", boxShadow: "0 1px 2px rgba(80,50,20,.08)" };
+const statCard: React.CSSProperties = { background: "#fbf6ea", borderRadius: 8, padding: 16, border: "1px solid #d8c6a0", boxShadow: "0 1px 2px rgba(80,50,20,.08)" };
+const btnPrimary: React.CSSProperties = { background: RED, color: "#fff", border: "none", borderRadius: 6, padding: "10px 18px", fontSize: 14, cursor: "pointer", display: "inline-block" };
+const btnGhost: React.CSSProperties = { background: "#fbf6ea", color: RED, border: "1px solid #c2a878", borderRadius: 6, padding: "9px 16px", fontSize: 14, cursor: "pointer" };
+const input: React.CSSProperties = { border: "1px solid #c2a878", borderRadius: 6, padding: "7px 10px", fontSize: 14, background: "#fffdf7", color: "#3a2a1a" };
+const th: React.CSSProperties = { padding: "8px 10px", fontWeight: 600, color: "#6b4a2b" };
 const td: React.CSSProperties = { padding: "8px 10px" };
-const errBox: React.CSSProperties = { background: "#fde8e8", color: "#9b1c1c", padding: "12px 16px", borderRadius: 8, marginTop: 16, fontSize: 14 };
-const warnBox: React.CSSProperties = { background: "#fef6e7", color: "#92591a", padding: "12px 16px", borderRadius: 8, marginTop: 12, fontSize: 14 };
+const errBox: React.CSSProperties = { background: "#f7dcd6", color: "#7a1b1e", padding: "12px 16px", borderRadius: 8, marginTop: 16, fontSize: 14 };
+const warnBox: React.CSSProperties = { background: "#f3e7cc", color: "#7a4a12", padding: "12px 16px", borderRadius: 8, marginTop: 12, fontSize: 14, border: "1px solid #d8c6a0" };
