@@ -66,10 +66,14 @@ export function classify(
 
   const out: ClassifiedItem[] = [];
 
-  for (const [, recs] of byKey) {
-    recs.sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+  for (const [, allRecs] of byKey) {
+    allRecs.sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    // Only consider snapshots up to and including the selected date ("as of" that date).
+    const recs = allRecs.filter((r) => r.snapshot_date <= latestDate);
+    if (recs.length === 0) continue;
     const latest = recs[recs.length - 1];
-    if (latest.snapshot_date !== latestDate) continue; // item not in newest snapshot (discontinued)
+    // The item must actually appear in the selected snapshot to be classified.
+    if (latest.snapshot_date !== latestDate) continue;
     if (opts.excludedVendors.includes(latest.vendor)) continue;
 
     const hist = recs.map((r) => ({ date: r.snapshot_date, qoh: r.qoh, po: r.po }));
