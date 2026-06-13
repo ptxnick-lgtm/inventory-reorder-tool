@@ -131,22 +131,22 @@ function rowsToTable(raw: string[][]): ParseResult {
   };
 }
 
-export function parseCSVText(text: string): ParseResult {
+export function parseCSVText(text: string, filename = ""): ParseResult {
   const lines = text.split(/\r?\n/);
   // Try the QuickBooks space-aligned format first.
   const qb = parseQuickBooksSpaceFormat(lines);
   if (qb && qb.rows.length > 0) {
-    qb.detectedDate = detectDateFromText(text);
+    qb.detectedDate = detectDateFromText(text) || detectDateFromFilename(filename);
     return qb;
   }
   // Fall back to a normal comma-separated CSV.
   const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
   const result = rowsToTable(parsed.data as string[][]);
-  result.detectedDate = detectDateFromText(text);
+  result.detectedDate = detectDateFromText(text) || detectDateFromFilename(filename);
   return result;
 }
 
-export function parseXLSX(buf: ArrayBuffer): ParseResult {
+export function parseXLSX(buf: ArrayBuffer, filename = ""): ParseResult {
   const wb = XLSX.read(buf, { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false, defval: "" });
@@ -159,13 +159,13 @@ export function parseXLSX(buf: ArrayBuffer): ParseResult {
     const lines = (raw as string[][]).map((r) => r.map((c) => String(c || "")).join(" "));
     const qb = parseQuickBooksSpaceFormat(lines);
     if (qb && qb.rows.length > 0) {
-      qb.detectedDate = detectDateFromText(flat);
+      qb.detectedDate = detectDateFromText(flat) || detectDateFromFilename(filename);
       return qb;
     }
   }
 
   const result = rowsToTable(raw as string[][]);
-  result.detectedDate = detectDateFromText(flat);
+  result.detectedDate = detectDateFromText(flat) || detectDateFromFilename(filename);
   return result;
 }
 
@@ -190,5 +190,23 @@ export function detectDateFromText(text: string): string | null {
   }
   const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
   if (iso) return iso[0];
+  return null;
+}
+
+// Inventory exports are often named with the date (e.g. "Inventory_2026-05-06.csv"
+// or "Inventory-6-12-2026.csv") while the file's contents carry no date at all.
+// This reads the date out of the filename, accepting -, _, ., or / separators and
+// either order (year first or year last).
+export function detectDateFromFilename(name: string): string | null {
+  if (!name) return null;
+  // Year first: 2026-05-06 / 2026_05_06 / 2026.05.06
+  let m = name.match(/(20\d\d)[-_.](\d{1,2})[-_.](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  // Year last, 4-digit year: 6-12-2026 / 06_12_2026 / 6/12/2026
+  m = name.match(/(\d{1,2})[-_.\/](\d{1,2})[-_.\/](20\d\d)/);
+  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  // Year last, 2-digit year: 6-12-26
+  m = name.match(/(\d{1,2})[-_.\/](\d{1,2})[-_.\/](\d{2})(?:\D|$)/);
+  if (m) return `20${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
   return null;
 }
