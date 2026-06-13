@@ -1,0 +1,134 @@
+export interface SnapshotRow {
+  snapshot_date: string;
+  item: string;
+  vendor: string;
+  qoh: number;
+  po: number;
+}
+
+export type Tier = "order_now" | "order_soon" | "chronic_low" | "already_ordered" | "ok";
+
+export interface ClassifiedItem {
+  item: string;
+  vendor: string;
+  qoh: number;
+  po: number;
+  tier: Tier;
+  weeksOfStock: number | null;
+  consumptionPerWeek: number | null;
+  reason: string;
+  history: { date: string; qoh: number; po: number }[];
+}
+
+export interface ClassifyOptions {
+  excludedVendors: string[];
+  leadDaysByVendor: Record<string, number>;
+  defaultLeadDays: number;
+}
+
+const MS_PER_DAY = 86400000;
+
+function weeksBetween(a: string, b: string): number {
+  const d = (new Date(b).getTime() - new Date(a).getTime()) / MS_PER_DAY / 7;
+  return d <= 0 ? 0 : d;
+}
+
+// Consumption = sum of decreases in qoh across consecutive snapshots, ignoring increases (restocks).
+// Returns units consumed per week, or null if not enough history.
+function consumptionPerWeek(hist: { date: string; qoh: number }[]): number | null {
+  if (hist.length < 2) return null;
+  let consumed = 0;
+  let weeks = 0;
+  for (let i = 1; i < hist.length; i++) {
+    const dq = hist[i - 1].qoh - hist[i].qoh; // positive = consumed
+    const w = weeksBetween(hist[i - 1].date, hist[i].date);
+    if (w > 0) {
+      weeks += w;
+      if (dq > 0) consumed += dq;
+    }
+  }
+  if (weeks <= 0) return null;
+  return consumed / weeks;
+}
+
+export function classify(
+  snapshots: SnapshotRow[],
+  latestDate: string,
+  opts: ClassifyOptions
+): ClassifiedItem[] {
+  // Group all snapshots by item+vendor key
+  const byKey = new Map<string, SnapshotRow[]>();
+  for (const s of snapshots) {
+    const k = s.item + "||" + s.vendor;
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k)!.push(s);
+  }
+
+  const out: ClassifiedItem[] = [];
+
+  for (const [, recs] of byKey) {
+    recs.sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    const latest = recs[recs.length - 1];
+    if (latest.snapshot_date !== latestDate) continue; // item not in newest snapshot (discontinued)
+    if (opts.excludedVendors.includes(latest.vendor)) continue;
+
+    const hist = recs.map((r) => ({ date: r.snapshot_date, qoh: r.qoh, po: r.po }));
+    const cpw = consumptionPerWeek(hist);
+    const leadDays = opts.leadDaysByVendor[latest.vendor] ?? opts.defaultLeadDays;
+    const leadWeeks = leadDays / 7;
+    const buffer = leadWeeks + 1; // order when stock would run out within lead time + 1 week safety
+
+    let weeksOfStock: number | null = null;
+    if (cpw && cpw > 0) weeksOfStock = latest.qoh / cpw;
+
+    let tier: Tier = "ok";
+    let reason = "";
+
+    const priorRecs = recs.slice(0, -1);
+    const wasZeroNoPObefore = priorRecs.length > 0 && priorRecs.every((r) => r.qoh === 0 && r.po === 0);
+
+    if (latest.po > 0) {
+      tier = "already_ordered";
+      reason = `On purchase order (${latest.po} incoming).`;
+    } else if (latest.qoh === 0) {
+      if (wasZeroNoPObefore) {
+        tier = "chronic_low";
+        reason = "Out of stock across multiple snapshots with no order placed — likely low demand.";
+      } else {
+        tier = "order_now";
+        reason = "Out of stock with nothing on order.";
+      }
+    } else if (weeksOfStock !== null && weeksOfStock <= buffer) {
+      tier = "order_now";
+      reason = `Only ~${weeksOfStock.toFixed(1)} weeks of stock left; vendor lead time is ~${leadWeeks.toFixed(1)} weeks. Order now to avoid a gap.`;
+    } else if (weeksOfStock !== null && weeksOfStock <= buffer + 2) {
+      tier = "order_soon";
+      reason = `~${weeksOfStock.toFixed(1)} weeks of stock left; will need ordering before next check.`;
+    } else {
+      tier = "ok";
+      reason = weeksOfStock !== null ? `~${weeksOfStock.toFixed(1)} weeks of stock.` : "Adequate stock.";
+    }
+
+    out.push({
+      item: latest.item,
+      vendor: latest.vendor,
+      qoh: latest.qoh,
+      po: latest.po,
+      tier,
+      weeksOfStock,
+      consumptionPerWeek: cpw,
+      reason,
+      history: hist,
+    });
+  }
+
+  return out;
+}
+
+export const TIER_META: Record<Tier, { label: string; color: string; order: number }> = {
+  order_now: { label: "Order now", color: "#E24B4A", order: 0 },
+  order_soon: { label: "Order soon", color: "#EF9F27", order: 1 },
+  chronic_low: { label: "Low priority", color: "#EAC54F", order: 2 },
+  already_ordered: { label: "Already ordered", color: "#1D9E75", order: 3 },
+  ok: { label: "OK", color: "#888780", order: 4 },
+};
