@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { parseCSVText, parseXLSX, ParseResult } from "@/lib/parser";
-import { classify, snapshotTrend, ClassifiedItem, SnapshotStat, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
+import { classify, snapshotTrend, inventoryChanges, ClassifiedItem, SnapshotStat, InventoryChange, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
 import {
   fetchVendors, fetchAllSnapshots, insertSnapshot, fetchImportedDates,
-  updateVendor, addVendor, VendorRow,
+  updateVendor, addVendor, fetchProducts, upsertProduct, VendorRow, ProductRow,
 } from "@/lib/supabase";
 import { exportSortedPdf } from "@/lib/exportPdf";
 
@@ -23,6 +23,8 @@ export default function Page() {
   const [allSnapshots, setAllSnapshots] = useState<SnapshotRow[]>([]);
   const [activeDate, setActiveDate] = useState<string>("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
+  const [products, setProducts] = useState<ProductRow[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
   const loadDb = useCallback(async () => {
@@ -30,6 +32,8 @@ export default function Page() {
       const [v, d] = await Promise.all([fetchVendors(), fetchImportedDates()]);
       setVendors(v);
       setImportedDates(d);
+      // Products are optional (the table may not exist yet) — never block on them.
+      try { setProducts(await fetchProducts()); } catch { /* pricing not set up yet */ }
       if (d.length) { setActiveDate(d[d.length - 1]); await runClassify(d[d.length - 1], v); }
     } catch (e: any) {
       setError("Could not connect to the database. Check that Supabase is set up (see SETUP.md). Details: " + e.message);
@@ -50,6 +54,33 @@ export default function Page() {
 
   const excludedNames = useMemo(() => vendors.filter((v) => v.excluded).map((v) => v.name), [vendors]);
   const trend = useMemo(() => snapshotTrend(allSnapshots, excludedNames), [allSnapshots, excludedNames]);
+  const prevDate = useMemo(() => {
+    const i = importedDates.indexOf(activeDate);
+    return i > 0 ? importedDates[i - 1] : null;
+  }, [importedDates, activeDate]);
+  const changes = useMemo(
+    () => inventoryChanges(allSnapshots, activeDate, prevDate, excludedNames),
+    [allSnapshots, activeDate, prevDate, excludedNames]
+  );
+  const productMap = useMemo(() => {
+    const m = new Map<string, ProductRow>();
+    products.forEach((p) => m.set(p.item, p));
+    return m;
+  }, [products]);
+  const catalogueItems = useMemo(() => {
+    const seen = new Map<string, string>();
+    allSnapshots.forEach((s) => { if (s.item && !seen.has(s.item)) seen.set(s.item, s.vendor); });
+    return Array.from(seen.entries()).map(([item, vendor]) => ({ item, vendor })).sort((a, b) => a.item.localeCompare(b.item));
+  }, [allSnapshots]);
+
+  async function saveProduct(item: string, cost: number, price: number) {
+    await upsertProduct(item, cost, price);
+    setProducts((prev) => {
+      const next = prev.filter((p) => p.item !== item);
+      next.push({ item, cost, price });
+      return next;
+    });
+  }
 
   async function handleFile(file: File) {
     setError(""); setStage("parsing"); setFileName(file.name);
@@ -103,9 +134,14 @@ export default function Page() {
     <main style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Inventory Reorder Tool</h1>
-        <button onClick={() => setShowSettings(!showSettings)} style={btnGhost}>
-          {showSettings ? "Close settings" : "Vendor settings"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { setShowPricing(false); setShowSettings(!showSettings); }} style={btnGhost}>
+            {showSettings ? "Close settings" : "Vendor settings"}
+          </button>
+          <button onClick={() => { setShowSettings(false); setShowPricing(!showPricing); }} style={btnGhost}>
+            {showPricing ? "Close pricing" : "Product pricing"}
+          </button>
+        </div>
       </div>
       <p style={{ color: "#666", marginTop: 6 }}>
         Export your inventory from QuickBooks as CSV or Excel, drop it below, and get a sorted reorder list.
@@ -114,6 +150,7 @@ export default function Page() {
       {error && <div style={errBox}>{error}</div>}
 
       {showSettings && <VendorSettings vendors={vendors} onChange={loadDb} />}
+      {showPricing && <ProductPricing items={catalogueItems} productMap={productMap} onSave={saveProduct} />}
 
       {/* Upload zone */}
       {(stage === "idle" || stage === "parsing") && (
@@ -179,7 +216,10 @@ export default function Page() {
         <Dashboard
           classified={classified}
           trend={trend}
+          changes={changes}
+          productMap={productMap}
           activeDate={activeDate}
+          prevDate={prevDate}
           importedDates={importedDates}
           onPickDate={async (d) => { setActiveDate(d); await runClassify(d, vendors); }}
           tierCounts={tierCounts}
@@ -198,7 +238,10 @@ export default function Page() {
 interface DashboardProps {
   classified: ClassifiedItem[];
   trend: SnapshotStat[];
+  changes: InventoryChange[];
+  productMap: Map<string, ProductRow>;
   activeDate: string;
+  prevDate: string | null;
   importedDates: string[];
   onPickDate: (d: string) => void | Promise<void>;
   tierCounts: (t: Tier) => number;
@@ -206,10 +249,12 @@ interface DashboardProps {
   onNewUpload: () => void;
 }
 
-function Dashboard({ classified, trend, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload }: DashboardProps) {
+type View = "list" | "changes" | "insights" | "revenue";
+
+function Dashboard({ classified, trend, changes, productMap, activeDate, prevDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
-  const [view, setView] = useState<"list" | "insights">("list");
+  const [view, setView] = useState<View>("list");
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -226,8 +271,8 @@ function Dashboard({ classified, trend, activeDate, importedDates, onPickDate, t
       </div>
 
       {/* View tabs */}
-      <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #e2e8f0" }}>
-        {([["list", "Reorder list"], ["insights", "Insights"]] as const).map(([key, label]) => (
+      <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
+        {([["list", "Reorder list"], ["changes", "Daily changes"], ["insights", "Insights"], ["revenue", "Revenue"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setView(key)}
@@ -244,7 +289,7 @@ function Dashboard({ classified, trend, activeDate, importedDates, onPickDate, t
         ))}
       </div>
 
-      {view === "list" ? (
+      {view === "list" && (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginTop: 20 }}>
             {tiers.map((t) => (
@@ -256,9 +301,10 @@ function Dashboard({ classified, trend, activeDate, importedDates, onPickDate, t
           </div>
           {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} />}
         </>
-      ) : (
-        <Insights classified={classified} trend={trend} />
       )}
+      {view === "changes" && <ChangesTab changes={changes} activeDate={activeDate} prevDate={prevDate} />}
+      {view === "insights" && <Insights classified={classified} trend={trend} />}
+      {view === "revenue" && <RevenueTab classified={classified} changes={changes} productMap={productMap} prevDate={prevDate} />}
     </div>
   );
 }
@@ -478,6 +524,234 @@ function Sparkline({ history }: { history: { qoh: number }[] }) {
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
       <polyline points={pts} fill="none" stroke={down ? "#E24B4A" : "#1D9E75"} strokeWidth={1.5} />
     </svg>
+  );
+}
+
+// ---- Daily changes tab ----------------------------------------------------
+
+function ChangesTab({ changes, activeDate, prevDate }: { changes: InventoryChange[]; activeDate: string; prevDate: string | null }) {
+  if (!prevDate) {
+    return <div style={{ ...card, marginTop: 20, color: "#666" }}>This is your earliest snapshot. Upload another day&apos;s file to see what sold and what arrived.</div>;
+  }
+  const sold = changes.filter((c) => c.delta < 0).sort((a, b) => a.delta - b.delta);
+  const received = changes.filter((c) => c.delta > 0).sort((a, b) => b.delta - a.delta);
+  const unitsSold = sold.reduce((s, c) => s - c.delta, 0);
+  const unitsReceived = received.reduce((s, c) => s + c.delta, 0);
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <p style={{ color: "#666", fontSize: 14, marginTop: 0 }}>
+        Change from <strong>{prevDate}</strong> to <strong>{activeDate}</strong>. Drops are sales; rises are stock arriving.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
+        <Kpi label="Units sold" value={unitsSold.toLocaleString()} sub={`${sold.length} products`} accent="#E24B4A" />
+        <Kpi label="Units received" value={unitsReceived.toLocaleString()} sub={`${received.length} products`} accent="#1D9E75" />
+        <Kpi label="Net change" value={(unitsReceived - unitsSold).toLocaleString()} sub="received − sold" />
+      </div>
+
+      <ChangeTable title="Sold — inventory down" color="#E24B4A" rows={sold} />
+      <ChangeTable title="Received — inventory up" color="#1D9E75" rows={received} />
+    </div>
+  );
+}
+
+function ChangeTable({ title, color, rows }: { title: string; color: string; rows: InventoryChange[] }) {
+  return (
+    <div style={{ ...card, marginTop: 20 }}>
+      <h3 style={{ marginTop: 0, color, fontSize: 16 }}>{title} — {rows.length} items</h3>
+      {rows.length === 0 ? <p style={{ color: "#888", fontSize: 14 }}>Nothing here for this day.</p> : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+              <th style={th}>Vendor</th><th style={th}>Item</th>
+              <th style={{ ...th, textAlign: "center" }}>Was</th>
+              <th style={{ ...th, textAlign: "center" }}>Now</th>
+              <th style={{ ...th, textAlign: "center" }}>Change</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((c) => (
+                <tr key={c.item + c.vendor} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                  <td style={td}>{c.vendor}</td>
+                  <td style={td}>{c.item}</td>
+                  <td style={{ ...td, textAlign: "center", color: "#999" }}>{c.prevQoh}</td>
+                  <td style={{ ...td, textAlign: "center" }}>{c.qoh}</td>
+                  <td style={{ ...td, textAlign: "center", fontWeight: 600, color }}>{c.delta > 0 ? `+${c.delta}` : c.delta}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Revenue tab ----------------------------------------------------------
+
+function money(n: number): string {
+  return "$" + Math.round(n).toLocaleString();
+}
+
+function RevenueTab({ classified, changes, productMap, prevDate }: { classified: ClassifiedItem[]; changes: InventoryChange[]; productMap: Map<string, ProductRow>; prevDate: string | null }) {
+  let revenue = 0, cogs = 0, restockCost = 0;
+  const sellers: { item: string; vendor: string; units: number; revenue: number }[] = [];
+  for (const c of changes) {
+    const p = productMap.get(c.item);
+    const price = p?.price || 0, cost = p?.cost || 0;
+    if (c.delta < 0) {
+      const units = -c.delta;
+      revenue += units * price;
+      cogs += units * cost;
+      sellers.push({ item: c.item, vendor: c.vendor, units, revenue: units * price });
+    } else if (c.delta > 0) {
+      restockCost += c.delta * cost;
+    }
+  }
+  const grossProfit = revenue - cogs;
+  const margin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+
+  // Inventory valuation as of the selected snapshot.
+  let invCost = 0, invRetail = 0, missing = 0;
+  for (const i of classified) {
+    const p = productMap.get(i.item);
+    if (!p || (p.price === 0 && p.cost === 0)) missing += 1;
+    invCost += i.qoh * (p?.cost || 0);
+    invRetail += i.qoh * (p?.price || 0);
+  }
+  const topSellers = sellers.sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      {missing > 0 && (
+        <div style={warnBox}>
+          {missing} of {classified.length} items have no cost/price set. Add them under <strong>Product pricing</strong> (top right) to make these numbers complete.
+        </div>
+      )}
+
+      {prevDate ? (
+        <>
+          <p style={{ color: "#666", fontSize: 14, margin: "12px 0 0" }}>Sales since the previous snapshot ({prevDate}):</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 8 }}>
+            <Kpi label="Revenue" value={money(revenue)} sub="units sold × price" accent="#1D9E75" />
+            <Kpi label="Gross profit" value={money(grossProfit)} sub="revenue − cost of goods" />
+            <Kpi label="Margin" value={`${margin.toFixed(1)}%`} sub="profit ÷ revenue" />
+            <Kpi label="Restock spend" value={money(restockCost)} sub="cost of stock received" />
+          </div>
+        </>
+      ) : (
+        <div style={{ ...card, marginTop: 12, color: "#666" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
+      )}
+
+      <p style={{ color: "#666", fontSize: 14, margin: "20px 0 0" }}>Current inventory value:</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 8 }}>
+        <Kpi label="Value at cost" value={money(invCost)} sub="what it cost you" />
+        <Kpi label="Retail value" value={money(invRetail)} sub="if it all sells" />
+        <Kpi label="Potential profit" value={money(invRetail - invCost)} sub="retail − cost" />
+      </div>
+
+      {prevDate && (
+        <div style={{ ...card, marginTop: 20 }}>
+          <h3 style={{ marginTop: 0, fontSize: 16 }}>Top sellers this period <span style={{ color: "#888", fontWeight: 400, fontSize: 13 }}>— by revenue</span></h3>
+          {topSellers.length === 0 ? (
+            <p style={{ color: "#888", fontSize: 14 }}>No sales recorded, or no prices set yet.</p>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+                <th style={th}>Item</th><th style={th}>Vendor</th>
+                <th style={{ ...th, textAlign: "center" }}>Units sold</th>
+                <th style={{ ...th, textAlign: "right" }}>Revenue</th>
+              </tr></thead>
+              <tbody>
+                {topSellers.map((s) => (
+                  <tr key={s.item + s.vendor} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                    <td style={td}>{s.item}</td>
+                    <td style={td}>{s.vendor}</td>
+                    <td style={{ ...td, textAlign: "center" }}>{s.units}</td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{money(s.revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Product pricing editor -----------------------------------------------
+
+function ProductPricing({ items, productMap, onSave }: {
+  items: { item: string; vendor: string }[];
+  productMap: Map<string, ProductRow>;
+  onSave: (item: string, cost: number, price: number) => Promise<void>;
+}) {
+  const [filter, setFilter] = useState("");
+  const [edits, setEdits] = useState<Record<string, { cost: string; price: string }>>({});
+  const [savedItem, setSavedItem] = useState("");
+
+  const filtered = items.filter((r) => r.item.toLowerCase().includes(filter.toLowerCase()));
+  const shown = filtered.slice(0, 200);
+
+  function val(item: string, field: "cost" | "price"): string {
+    if (edits[item] && edits[item][field] !== undefined) return edits[item][field];
+    const p = productMap.get(item);
+    const n = p ? p[field] : undefined;
+    return n === undefined || n === 0 ? "" : String(n);
+  }
+  function onEdit(item: string, field: "cost" | "price", v: string) {
+    setEdits((e) => ({ ...e, [item]: { cost: e[item]?.cost ?? "", price: e[item]?.price ?? "", [field]: v } }));
+  }
+  async function commit(item: string) {
+    const cost = parseFloat(val(item, "cost")) || 0;
+    const price = parseFloat(val(item, "price")) || 0;
+    await onSave(item, cost, price);
+    setSavedItem(item);
+    setTimeout(() => setSavedItem((s) => (s === item ? "" : s)), 1200);
+  }
+
+  return (
+    <div style={{ ...card, marginTop: 16 }}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>Product pricing</h2>
+      <p style={{ color: "#666", fontSize: 14 }}>Enter what each product costs you and what you sell it for. These save automatically and power the Revenue tab. Search to find items quickly.</p>
+      <input
+        type="text" placeholder="Search products…" value={filter}
+        onChange={(e) => setFilter(e.target.value)} style={{ ...input, width: "100%", maxWidth: 320, marginBottom: 12 }}
+      />
+      <div style={{ maxHeight: 380, overflowY: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+            <th style={th}>Item</th><th style={th}>Vendor</th>
+            <th style={{ ...th, textAlign: "center" }}>Cost ($)</th>
+            <th style={{ ...th, textAlign: "center" }}>Price ($)</th>
+            <th style={{ ...th, width: 20 }}></th>
+          </tr></thead>
+          <tbody>
+            {shown.map((r) => (
+              <tr key={r.item} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <td style={td}>{r.item}</td>
+                <td style={{ ...td, color: "#888" }}>{r.vendor}</td>
+                <td style={{ ...td, textAlign: "center" }}>
+                  <input type="number" min={0} step={0.01} value={val(r.item, "cost")}
+                    onChange={(e) => onEdit(r.item, "cost", e.target.value)} onBlur={() => commit(r.item)}
+                    style={{ ...input, width: 80 }} />
+                </td>
+                <td style={{ ...td, textAlign: "center" }}>
+                  <input type="number" min={0} step={0.01} value={val(r.item, "price")}
+                    onChange={(e) => onEdit(r.item, "price", e.target.value)} onBlur={() => commit(r.item)}
+                    style={{ ...input, width: 80 }} />
+                </td>
+                <td style={{ ...td, color: "#1D9E75" }}>{savedItem === r.item ? "✓" : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {filtered.length > shown.length && (
+        <p style={{ color: "#888", fontSize: 13, marginBottom: 0 }}>Showing first {shown.length} of {filtered.length}. Type in the search box to narrow down.</p>
+      )}
+      {items.length === 0 && <p style={{ color: "#888", fontSize: 14 }}>Upload an inventory file first — your products will appear here.</p>}
+    </div>
   );
 }
 

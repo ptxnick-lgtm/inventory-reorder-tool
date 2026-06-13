@@ -37,6 +37,15 @@ create table if not exists vendors (
   excluded   boolean not null default false
 );
 
+-- Per-product cost and sales price, entered by hand in the app. Drives the
+-- revenue dashboard (units sold x price/cost between snapshots).
+create table if not exists products (
+  item        text primary key,
+  cost        numeric not null default 0,
+  price       numeric not null default 0,
+  updated_at  timestamptz default now()
+);
+
 -- Seed the known vendors. Excluded = the ones that don't get scanned/ordered here.
 insert into vendors (name, lead_days, excluded) values
   ('A Wild Soap Bar', 14, true),

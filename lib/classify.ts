@@ -168,6 +168,49 @@ export function snapshotTrend(snapshots: SnapshotRow[], excludedVendors: string[
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export interface InventoryChange {
+  item: string;
+  vendor: string;
+  prevQoh: number;
+  qoh: number;
+  delta: number; // qoh - prevQoh: positive = received, negative = sold
+}
+
+// Net change in on-hand for each item between two snapshot dates. A rise means
+// stock arrived (orders received); a drop means stock left (sales). Items with
+// no change are omitted. Excluded vendors are skipped.
+export function inventoryChanges(
+  snapshots: SnapshotRow[],
+  date: string,
+  prevDate: string | null,
+  excludedVendors: string[] = []
+): InventoryChange[] {
+  if (!date || !prevDate) return [];
+  const excl = new Set(excludedVendors);
+  const prev = new Map<string, SnapshotRow>();
+  const curr = new Map<string, SnapshotRow>();
+  for (const s of snapshots) {
+    if (!s || !s.item || !s.vendor) continue;
+    if (excl.has(s.vendor)) continue;
+    const k = s.item + "||" + s.vendor;
+    if (s.snapshot_date === prevDate) prev.set(k, s);
+    else if (s.snapshot_date === date) curr.set(k, s);
+  }
+  const keys = new Set([...prev.keys(), ...curr.keys()]);
+  const out: InventoryChange[] = [];
+  for (const k of keys) {
+    const p = prev.get(k);
+    const c = curr.get(k);
+    const prevQoh = p ? p.qoh : 0;
+    const qoh = c ? c.qoh : 0;
+    const delta = qoh - prevQoh;
+    if (delta === 0) continue;
+    const ref = c || p!;
+    out.push({ item: ref.item, vendor: ref.vendor, prevQoh, qoh, delta });
+  }
+  return out;
+}
+
 export const TIER_META: Record<Tier, { label: string; color: string; order: number }> = {
   order_now: { label: "Order now", color: "#E24B4A", order: 0 },
   order_soon: { label: "Order soon", color: "#EF9F27", order: 1 },

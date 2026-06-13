@@ -81,6 +81,37 @@ export async function insertSnapshot(
   });
 }
 
+export interface ProductRow {
+  item: string;
+  cost: number;
+  price: number;
+}
+
+export async function fetchProducts(): Promise<ProductRow[]> {
+  // Page through so a large catalogue isn't clipped at the 1,000-row select cap.
+  const PAGE = 1000;
+  const all: ProductRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("products")
+      .select("item,cost,price")
+      .order("item")
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...(data as ProductRow[]));
+    if (data.length < PAGE) break;
+  }
+  return all;
+}
+
+export async function upsertProduct(item: string, cost: number, price: number) {
+  const { error } = await supabase
+    .from("products")
+    .upsert({ item, cost, price, updated_at: new Date().toISOString() }, { onConflict: "item" });
+  if (error) throw error;
+}
+
 export async function updateVendor(name: string, patch: Partial<VendorRow>) {
   const { error } = await supabase.from("vendors").update(patch).eq("name", name);
   if (error) throw error;
