@@ -56,9 +56,14 @@ export function classify(
   latestDate: string,
   opts: ClassifyOptions
 ): ClassifiedItem[] {
+  if (!latestDate) return [];
+  // Drop any rows missing the fields we group and sort on, so a single bad row
+  // can never throw mid-classification.
+  const valid = snapshots.filter((s) => s && s.snapshot_date && s.item && s.vendor);
+
   // Group all snapshots by item+vendor key
   const byKey = new Map<string, SnapshotRow[]>();
-  for (const s of snapshots) {
+  for (const s of valid) {
     const k = s.item + "||" + s.vendor;
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k)!.push(s);
@@ -67,7 +72,7 @@ export function classify(
   const out: ClassifiedItem[] = [];
 
   for (const [, allRecs] of byKey) {
-    allRecs.sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    allRecs.sort((a, b) => (a.snapshot_date || "").localeCompare(b.snapshot_date || ""));
     // Only consider snapshots up to and including the selected date ("as of" that date).
     const recs = allRecs.filter((r) => r.snapshot_date <= latestDate);
     if (recs.length === 0) continue;
