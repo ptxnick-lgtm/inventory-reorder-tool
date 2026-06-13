@@ -16,6 +16,7 @@ export interface ClassifiedItem {
   tier: Tier;
   weeksOfStock: number | null;
   consumptionPerWeek: number | null;
+  suggestedQty: number | null;
   reason: string;
   history: { date: string; qoh: number; po: number }[];
 }
@@ -90,6 +91,14 @@ export function classify(
     let weeksOfStock: number | null = null;
     if (cpw && cpw > 0) weeksOfStock = latest.qoh / cpw;
 
+    // Suggested order quantity: enough to cover the vendor's lead time plus a ~2-week
+    // safety/review buffer, minus what's already on hand and on order. Only meaningful
+    // when we have a real consumption rate.
+    let suggestedQty: number | null = null;
+    if (cpw && cpw > 0) {
+      suggestedQty = Math.max(0, Math.ceil(cpw * (leadWeeks + 2) - latest.qoh - latest.po));
+    }
+
     let tier: Tier = "ok";
     let reason = "";
 
@@ -126,12 +135,37 @@ export function classify(
       tier,
       weeksOfStock,
       consumptionPerWeek: cpw,
+      suggestedQty,
       reason,
       history: hist,
     });
   }
 
   return out;
+}
+
+export interface SnapshotStat {
+  date: string;
+  outOfStock: number;
+  itemCount: number;
+}
+
+// Out-of-stock count for each snapshot date, so the UI can chart the trend over
+// time. Excluded vendors are left out to match the rest of the dashboard.
+export function snapshotTrend(snapshots: SnapshotRow[], excludedVendors: string[] = []): SnapshotStat[] {
+  const excl = new Set(excludedVendors);
+  const byDate = new Map<string, { out: number; total: number }>();
+  for (const s of snapshots) {
+    if (!s || !s.snapshot_date || !s.item || !s.vendor) continue;
+    if (excl.has(s.vendor)) continue;
+    const e = byDate.get(s.snapshot_date) || { out: 0, total: 0 };
+    e.total += 1;
+    if (s.qoh === 0) e.out += 1;
+    byDate.set(s.snapshot_date, e);
+  }
+  return Array.from(byDate.entries())
+    .map(([date, v]) => ({ date, outOfStock: v.out, itemCount: v.total }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export const TIER_META: Record<Tier, { label: string; color: string; order: number }> = {
