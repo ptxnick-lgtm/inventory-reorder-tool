@@ -18,18 +18,32 @@ export async function fetchVendors(): Promise<VendorRow[]> {
 }
 
 export async function fetchAllSnapshots() {
-  // Pull every snapshot row. At ~1,600 rows/snapshot this stays small for years.
-  const { data, error } = await supabase
-    .from("snapshots")
-    .select("snapshot_date,item,vendor,qoh,po")
-    .order("snapshot_date");
-  if (error) throw error;
-  return data;
+  // Pull every snapshot row. Supabase caps a single select at 1,000 rows, and
+  // one snapshot alone is ~1,600 rows, so we page through with .range() until a
+  // short page tells us we've reached the end. Order by id for stable paging
+  // (classify re-sorts by date internally).
+  const PAGE = 1000;
+  const all: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("snapshots")
+      .select("snapshot_date,item,vendor,qoh,po")
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
+  }
+  return all;
 }
 
 export async function fetchImportedDates(): Promise<string[]> {
+  // Read the date list from imported_files (one row per upload) rather than the
+  // huge snapshots table — otherwise the 1,000-row select cap collapses every
+  // date into just the earliest snapshot's date.
   const { data, error } = await supabase
-    .from("snapshots")
+    .from("imported_files")
     .select("snapshot_date")
     .order("snapshot_date");
   if (error) throw error;
