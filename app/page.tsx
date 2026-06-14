@@ -11,6 +11,11 @@ import { exportSortedPdf } from "@/lib/exportPdf";
 
 type Stage = "idle" | "parsing" | "review" | "saving" | "done";
 
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function Page() {
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [importedDates, setImportedDates] = useState<string[]>([]);
@@ -128,7 +133,7 @@ export default function Page() {
         throw new Error("Please upload a .csv or .xlsx file (exported from QuickBooks).");
       }
       setParseResult(result);
-      setSnapshotDate(result.detectedDate || "");
+      setSnapshotDate(result.detectedDate || todayStr());
       setStage("review");
     } catch (e: any) {
       setError(e.message); setStage("idle");

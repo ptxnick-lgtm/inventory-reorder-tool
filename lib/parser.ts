@@ -7,6 +7,7 @@ export interface ParsedRow {
   item: string;
   vendor: string;
   po: number;
+  min?: number;
 }
 
 export interface ParseResult {
@@ -19,8 +20,9 @@ export interface ParseResult {
 const HEADER_ALIASES: Record<string, string[]> = {
   qoh: ["quantity on hand", "qty on hand", "qoh", "on hand", "quantity"],
   item: ["item", "product", "name", "description"],
-  vendor: ["preferred vendor", "vendor", "supplier", "preferred ven"],
-  po: ["quantity on purchase order", "quantity on pu", "qty on po", "on purchase order", "on order", "po qty"],
+  vendor: ["preferred vendor", "vendor", "supplier", "preferred ven", "pref vendor", "pref ven"],
+  po: ["quantity on purchase order", "quantity on pu", "qty on po", "on purchase order", "on order", "on po", "po qty"],
+  min: ["reorder pt (min)", "reorder pt", "reorder point", "reorder min"],
 };
 
 function matchHeader(header: string): keyof typeof HEADER_ALIASES | null {
@@ -85,15 +87,18 @@ function rowsToTable(raw: string[][]): ParseResult {
       const m = matchHeader(String(cell || ""));
       if (m && map[m] === undefined) map[m] = idx;
     });
-    if (map.item !== undefined && map.vendor !== undefined) {
+    // Accept either a clear Item column, or a vendor + on-hand layout where the
+    // item sits in a header-less first column (QuickBooks "Stock Status by Item").
+    if (map.vendor !== undefined && (map.item !== undefined || map.qoh !== undefined)) {
       headerIdx = i;
       colMap = map;
+      if (colMap.item === undefined) colMap.item = 0;
       break;
     }
   }
   if (headerIdx === -1) {
     throw new Error(
-      "Could not find the expected columns. The file needs an 'Item' column and a 'Preferred Vendor' column (a Quantity On Hand column is also expected)."
+      "Could not find the expected columns. The file needs an item column and a vendor column (a Quantity On Hand column is also expected)."
     );
   }
 
@@ -115,12 +120,14 @@ function rowsToTable(raw: string[][]): ParseResult {
     const qoh = parseInt(qohRaw, 10);
     if (Number.isNaN(qoh)) { skipped++; continue; }
     const po = Number.isNaN(parseInt(poRaw, 10)) ? 0 : parseInt(poRaw, 10);
+    const minRaw = colMap.min !== undefined ? String(r[colMap.min] || "").trim() : "";
+    const minVal = parseInt(minRaw, 10);
 
     const vendor = canonicalVendor(vendorRaw);
     if (!vendor) { unmatched[vendorRaw] = (unmatched[vendorRaw] || 0) + 1; continue; }
     if (!itemRaw) { skipped++; continue; }
 
-    rows.push({ qoh, item: itemRaw, vendor, po });
+    rows.push({ qoh, item: itemRaw, vendor, po, min: Number.isNaN(minVal) ? undefined : minVal });
   }
 
   return {
@@ -173,7 +180,12 @@ export function parseCSVText(text: string, filename = ""): ParseResult {
   // Fall back to a normal comma-separated CSV.
   const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
   const result = rowsToTable(parsed.data as string[][]);
-  result.detectedDate = detectDateFromText(text) || detectDateFromFilename(filename);
+  // The "Stock Status by Item" report carries Next-Delivery dates in its rows;
+  // those must NOT be mistaken for the snapshot date, so trust only the filename.
+  const isStockStatus = /reorder pt|next deliv/i.test(text.slice(0, 1500));
+  result.detectedDate = isStockStatus
+    ? detectDateFromFilename(filename)
+    : detectDateFromText(text) || detectDateFromFilename(filename);
   return result;
 }
 

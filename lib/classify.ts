@@ -4,6 +4,7 @@ export interface SnapshotRow {
   vendor: string;
   qoh: number;
   po: number;
+  reorder_min?: number | null;
 }
 
 export type Tier = "order_now" | "order_soon" | "chronic_low" | "already_ordered" | "ok";
@@ -17,6 +18,7 @@ export interface ClassifiedItem {
   weeksOfStock: number | null;
   consumptionPerWeek: number | null;
   suggestedQty: number | null;
+  reorderMin: number | null;
   reason: string;
   history: { date: string; qoh: number; po: number }[];
 }
@@ -105,9 +107,26 @@ export function classify(
     const priorRecs = recs.slice(0, -1);
     const wasZeroNoPObefore = priorRecs.length > 0 && priorRecs.every((r) => r.qoh === 0 && r.po === 0);
 
+    // When the item has a reorder minimum set in QuickBooks, that's the owner's
+    // explicit threshold — trust it over the velocity estimate. Velocity logic
+    // still handles every item that has no minimum set.
+    const reorderMin = latest.reorder_min ?? null;
+    const hasMin = reorderMin !== null && reorderMin > 0;
+
     if (latest.po > 0) {
       tier = "already_ordered";
       reason = `On purchase order (${latest.po} incoming).`;
+    } else if (hasMin) {
+      if (latest.qoh <= reorderMin!) {
+        tier = "order_now";
+        reason = `At or below the reorder minimum of ${reorderMin} (on hand ${latest.qoh}).`;
+      } else if (latest.qoh <= reorderMin! + 1) {
+        tier = "order_soon";
+        reason = `Just above the reorder minimum of ${reorderMin} (on hand ${latest.qoh}).`;
+      } else {
+        tier = "ok";
+        reason = `Above the reorder minimum of ${reorderMin} (on hand ${latest.qoh}).`;
+      }
     } else if (latest.qoh === 0) {
       if (wasZeroNoPObefore) {
         tier = "chronic_low";
@@ -136,6 +155,7 @@ export function classify(
       weeksOfStock,
       consumptionPerWeek: cpw,
       suggestedQty,
+      reorderMin,
       reason,
       history: hist,
     });

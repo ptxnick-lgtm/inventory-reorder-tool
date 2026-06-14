@@ -24,12 +24,14 @@ export async function fetchAllSnapshots() {
   // (classify re-sorts by date internally).
   const PAGE = 1000;
   const all: any[] = [];
+  // reorder_min may not exist yet (before the migration is run) — degrade gracefully.
+  let cols = "snapshot_date,item,vendor,qoh,po,reorder_min";
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from("snapshots")
-      .select("snapshot_date,item,vendor,qoh,po")
-      .order("id")
-      .range(from, from + PAGE - 1);
+    let { data, error } = await supabase.from("snapshots").select(cols).order("id").range(from, from + PAGE - 1);
+    if (error && cols.includes("reorder_min")) {
+      cols = "snapshot_date,item,vendor,qoh,po";
+      ({ data, error } = await supabase.from("snapshots").select(cols).order("id").range(from, from + PAGE - 1));
+    }
     if (error) throw error;
     if (!data || data.length === 0) break;
     all.push(...data);
@@ -53,25 +55,37 @@ export async function fetchImportedDates(): Promise<string[]> {
 
 export async function insertSnapshot(
   date: string,
-  rows: { item: string; vendor: string; qoh: number; po: number }[],
+  rows: { item: string; vendor: string; qoh: number; po: number; min?: number }[],
   filename: string
 ) {
   // Remove any existing rows for this date first (allows re-uploading a corrected file).
   await supabase.from("snapshots").delete().eq("snapshot_date", date);
 
-  const payload = rows.map((r) => ({
-    snapshot_date: date,
-    item: r.item,
-    vendor: r.vendor,
-    qoh: r.qoh,
-    po: r.po,
+  const withMin = rows.map((r) => ({
+    snapshot_date: date, item: r.item, vendor: r.vendor, qoh: r.qoh, po: r.po, reorder_min: r.min ?? null,
+  }));
+  const baseOnly = rows.map((r) => ({
+    snapshot_date: date, item: r.item, vendor: r.vendor, qoh: r.qoh, po: r.po,
   }));
 
-  // Insert in chunks to stay well under request limits.
+  // Insert in chunks. If the reorder_min column doesn't exist yet, fall back to
+  // the base columns so uploads keep working before the migration is run.
   const CHUNK = 500;
-  for (let i = 0; i < payload.length; i += CHUNK) {
-    const { error } = await supabase.from("snapshots").insert(payload.slice(i, i + CHUNK));
-    if (error) throw error;
+  let useMin = true;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    if (useMin) {
+      const { error } = await supabase.from("snapshots").insert(withMin.slice(i, i + CHUNK));
+      if (error && /reorder_min|column/i.test(error.message)) {
+        useMin = false;
+        const retry = await supabase.from("snapshots").insert(baseOnly.slice(i, i + CHUNK));
+        if (retry.error) throw retry.error;
+      } else if (error) {
+        throw error;
+      }
+    } else {
+      const { error } = await supabase.from("snapshots").insert(baseOnly.slice(i, i + CHUNK));
+      if (error) throw error;
+    }
   }
 
   await supabase.from("imported_files").insert({

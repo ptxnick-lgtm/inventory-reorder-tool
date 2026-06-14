@@ -11,8 +11,12 @@ create table if not exists snapshots (
   vendor       text    not null,
   qoh          integer not null default 0,
   po           integer not null default 0,
+  reorder_min  integer,
   created_at   timestamptz default now()
 );
+
+-- If upgrading an existing database, add the reorder-minimum column:
+alter table snapshots add column if not exists reorder_min integer;
 
 create index if not exists idx_snapshots_date on snapshots (snapshot_date);
 create index if not exists idx_snapshots_item_vendor on snapshots (item, vendor);
