@@ -17,8 +17,12 @@ next-env.d.ts
 *.pem
 
 # private inventory data — never commit real business data to the repo
+# (sample-data/ stays tracked; these patterns only match root-level data files)
 /mom-inventory.pdf
-/Inventory_*.csv
+/*.csv
+/*.CSV
+/*.pdf
+/*.xlsx
 
 # debug logs
 npm-debug.log*
