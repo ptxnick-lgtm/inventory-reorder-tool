@@ -64,14 +64,20 @@ export default function Page() {
 
   useEffect(() => { loadDb(); }, [loadDb]);
 
-  async function runClassify(date: string, vendorList: VendorRow[]) {
-    const snaps = (await fetchAllSnapshots()) as SnapshotRow[];
+  // Re-run classification from snapshots already in memory (no network) — used
+  // when only the selected date changes.
+  function classifyFrom(snaps: SnapshotRow[], date: string, vendorList: VendorRow[]) {
     const excluded = vendorList.filter((v) => v.excluded).map((v) => v.name);
     const leadMap: Record<string, number> = {};
     vendorList.forEach((v) => (leadMap[v.name] = v.lead_days));
-    const result = classify(snaps, date, { excludedVendors: excluded, leadDaysByVendor: leadMap, defaultLeadDays: 14 });
+    setClassified(classify(snaps, date, { excludedVendors: excluded, leadDaysByVendor: leadMap, defaultLeadDays: 14 }));
+  }
+
+  // Fetch all snapshots, then classify — used on load and after upload/delete.
+  async function runClassify(date: string, vendorList: VendorRow[]) {
+    const snaps = (await fetchAllSnapshots()) as SnapshotRow[];
     setAllSnapshots(snaps);
-    setClassified(result);
+    classifyFrom(snaps, date, vendorList);
   }
 
   const excludedNames = useMemo(() => vendors.filter((v) => v.excluded).map((v) => v.name), [vendors]);
@@ -285,7 +291,7 @@ export default function Page() {
           catalogue={catalogueItems}
           activeDate={activeDate}
           importedDates={importedDates}
-          onPickDate={async (d) => { setActiveDate(d); await runClassify(d, vendors); }}
+          onPickDate={(d) => { setActiveDate(d); classifyFrom(allSnapshots, d, vendors); }}
           tierCounts={tierCounts}
           onExport={() => exportSortedPdf(classified, activeDate)}
           onNewUpload={() => { setStage("idle"); setParseResult(null); }}
@@ -361,7 +367,7 @@ interface DashboardProps {
   onDeleteSnapshot: (date: string) => void | Promise<void>;
 }
 
-type View = "list" | "revenue";
+type View = "list" | "revenue" | "compare";
 
 function Dashboard({ classified, productMap, periodSales, catalogue, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
@@ -426,7 +432,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, activeDate,
 
       {/* View tabs */}
       <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #333a44", flexWrap: "wrap" }}>
-        {([["list", "Reorder list"], ["revenue", "Revenue"]] as const).map(([key, label]) => (
+        {([["list", "Reorder list"], ["revenue", "Revenue"], ["compare", "Compare items"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setView(key)}
@@ -456,7 +462,8 @@ function Dashboard({ classified, productMap, periodSales, catalogue, activeDate,
           {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} />}
         </>
       )}
-      {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} catalogue={catalogue} />}
+      {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
+      {view === "compare" && <CompareItems periodSales={periodSales} catalogue={catalogue} />}
     </div>
   );
 }
@@ -619,7 +626,7 @@ function MoneyTrend({ data }: { data: RevPoint[] }) {
 
 const TIMEFRAMES: [string, string][] = [["all", "All time"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"]];
 
-function RevenueTab({ classified, productMap, periodSales, catalogue }: { classified: ClassifiedItem[]; productMap: Map<string, ProductRow>; periodSales: Period[]; catalogue: { item: string; vendor: string }[] }) {
+function RevenueTab({ classified, productMap, periodSales }: { classified: ClassifiedItem[]; productMap: Map<string, ProductRow>; periodSales: Period[] }) {
   const [tf, setTf] = useState("all");
   const tfLabel = TIMEFRAMES.find(([v]) => v === tf)?.[1] || "All time";
   const days = tf === "all" ? 0 : parseInt(tf, 10);
@@ -720,8 +727,6 @@ function RevenueTab({ classified, productMap, periodSales, catalogue }: { classi
               </table>
             )}
           </div>
-
-          <CompareItems catalogue={catalogue} sales={salesByItem} tfLabel={tfLabel} />
         </>
       )}
 
@@ -758,30 +763,49 @@ function baseName(item: string): string {
   return s;
 }
 
-function CompareItems({ catalogue, sales, tfLabel }: {
+function CompareItems({ periodSales, catalogue }: {
+  periodSales: Period[];
   catalogue: { item: string; vendor: string }[];
-  sales: Map<string, SoldItem>;
-  tfLabel: string;
 }) {
+  const [tf, setTf] = useState("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const keyOf = (c: { item: string; vendor: string }) => c.item + "||" + c.vendor;
+  const tfLabel = TIMEFRAMES.find(([v]) => v === tf)?.[1] || "All time";
 
-  // Auto-detected variant groups (same vendor + base name, 2+ members).
-  const groups = useMemo(() => {
-    const m = new Map<string, { base: string; vendor: string; keys: string[]; units: number }>();
+  // Sales per item over the selected timeframe (only recomputes on data/timeframe change).
+  const sales = useMemo(() => {
+    const days = tf === "all" ? 0 : parseInt(tf, 10);
+    const cutoff = days > 0 ? nDaysAgo(days) : null;
+    const periods = cutoff ? periodSales.filter((p) => p.date >= cutoff) : periodSales;
+    const m = new Map<string, SoldItem>();
+    for (const p of periods) for (const x of p.sold) {
+      const k = x.item + "||" + x.vendor;
+      const e = m.get(k) || { item: x.item, vendor: x.vendor, units: 0, revenue: 0, profit: 0 };
+      e.units += x.units; e.revenue += x.revenue; e.profit += x.profit;
+      m.set(k, e);
+    }
+    return m;
+  }, [periodSales, tf]);
+
+  // Variant-group membership is computed once from the catalogue (the heavy
+  // base-name parsing); unit totals for sorting come from the sales map.
+  const groupMembers = useMemo(() => {
+    const m = new Map<string, { base: string; vendor: string; keys: string[] }>();
     for (const c of catalogue) {
-      const gk = c.vendor + "::" + baseName(c.item).toLowerCase();
-      const e = m.get(gk) || { base: baseName(c.item), vendor: c.vendor, keys: [], units: 0 };
-      const k = keyOf(c);
-      e.keys.push(k);
-      e.units += sales.get(k)?.units || 0;
+      const base = baseName(c.item);
+      const gk = c.vendor + "::" + base.toLowerCase();
+      const e = m.get(gk) || { base, vendor: c.vendor, keys: [] };
+      e.keys.push(keyOf(c));
       m.set(gk, e);
     }
-    return Array.from(m.values())
-      .filter((g) => g.keys.length >= 2)
-      .sort((a, b) => b.units - a.units || a.base.localeCompare(b.base));
-  }, [catalogue, sales]);
+    return Array.from(m.values()).filter((g) => g.keys.length >= 2);
+  }, [catalogue]);
+  const groups = useMemo(() =>
+    groupMembers
+      .map((g) => ({ ...g, units: g.keys.reduce((s, k) => s + (sales.get(k)?.units || 0), 0) }))
+      .sort((a, b) => b.units - a.units || a.base.localeCompare(b.base)),
+    [groupMembers, sales]);
 
   const q = query.trim().toLowerCase();
   const matches = q
@@ -803,10 +827,16 @@ function CompareItems({ catalogue, sales, tfLabel }: {
   };
 
   return (
-    <div style={{ ...card, marginTop: 20 }}>
-      <h3 style={{ marginTop: 0, fontSize: 16 }}>Compare items <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— how variants stack up over {tfLabel}</span></h3>
-      <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 0 }}>Jump to a detected variant group, or search and add items by hand.</p>
+    <div style={{ marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 16 }}>Compare items <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— how variants stack up over {tfLabel}</span></h3>
+        <select value={tf} onChange={(e) => setTf(e.target.value)} style={{ ...input, padding: "5px 8px" }}>
+          {TIMEFRAMES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        </select>
+      </div>
+      <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 6 }}>Jump to a detected variant group, or search and add items by hand.</p>
 
+      <div style={{ ...card, marginTop: 12 }}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         {groups.length > 0 && (
           <select
@@ -878,6 +908,7 @@ function CompareItems({ catalogue, sales, tfLabel }: {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }
