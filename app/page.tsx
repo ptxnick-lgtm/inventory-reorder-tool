@@ -381,6 +381,27 @@ function Dashboard({ classified, trend, changes, productMap, periodSales, active
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // "In cart" checkboxes — persisted locally so progress survives refresh/tab switches.
+  const [cart, setCart] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try { const raw = localStorage.getItem("ir_cart"); if (raw) setCart(new Set(JSON.parse(raw))); } catch {}
+  }, []);
+  const saveCart = (next: Set<string>) => {
+    try { localStorage.setItem("ir_cart", JSON.stringify([...next])); } catch {}
+    setCart(next);
+  };
+  const toggleCart = (key: string) => {
+    const next = new Set(cart);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    saveCart(next);
+  };
+  const clearCart = (keys: string[]) => {
+    const next = new Set(cart);
+    keys.forEach((k) => next.delete(k));
+    saveCart(next);
+  };
+
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -445,7 +466,7 @@ function Dashboard({ classified, trend, changes, productMap, periodSales, active
               </div>
             ))}
           </div>
-          {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} />}
+          {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} />}
         </>
       )}
       {view === "changes" && <ChangesTab changes={changes} activeDate={activeDate} prevDate={prevDate} />}
@@ -455,11 +476,27 @@ function Dashboard({ classified, trend, changes, productMap, periodSales, active
   );
 }
 
-function TierTable({ items, tier }: { items: ClassifiedItem[]; tier: Tier }) {
+const cartKey = (i: { item: string; vendor: string }) => i.item + "||" + i.vendor;
+
+function TierTable({ items, tier, cart, onToggle, onClear }: {
+  items: ClassifiedItem[];
+  tier: Tier;
+  cart: Set<string>;
+  onToggle: (key: string) => void;
+  onClear: (keys: string[]) => void;
+}) {
   const sorted = [...items].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.item.localeCompare(b.item));
+  const checkedHere = sorted.filter((i) => cart.has(cartKey(i))).map(cartKey);
   return (
     <div style={{ ...card, marginTop: 16 }}>
-      <h3 style={{ marginTop: 0, color: TIER_META[tier].color }}>{TIER_META[tier].label} — {items.length} items</h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ margin: 0, color: TIER_META[tier].color }}>{TIER_META[tier].label} — {items.length} items</h3>
+        {checkedHere.length > 0 && (
+          <button onClick={() => onClear(checkedHere)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 13 }}>
+            Clear cart ({checkedHere.length})
+          </button>
+        )}
+      </div>
       {sorted.length === 0 ? <p style={{ color: "#9aa3ad" }}>Nothing in this category.</p> : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
@@ -471,20 +508,30 @@ function TierTable({ items, tier }: { items: ClassifiedItem[]; tier: Tier }) {
                 <th style={{ ...th, textAlign: "center" }}>Trend</th>
                 <th style={{ ...th, textAlign: "center" }}>Order qty</th>
                 <th style={th}>Note</th>
+                <th style={{ ...th, textAlign: "center" }}>In cart</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((i, idx) => (
-                <tr key={idx} style={{ borderBottom: "1px solid #2a2f37" }}>
-                  <td style={td}>{i.vendor}</td>
-                  <td style={td}>{i.item}</td>
-                  <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
-                  <td style={{ ...td, textAlign: "center" }}>{i.po}</td>
-                  <td style={{ ...td, textAlign: "center" }}><Sparkline history={i.history} /></td>
-                  <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? ACCENT : "#6b7480" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
-                  <td style={{ ...td, color: "#aab2bd", fontSize: 13 }}>{i.reason}</td>
-                </tr>
-              ))}
+              {sorted.map((i, idx) => {
+                const key = cartKey(i);
+                const inCart = cart.has(key);
+                return (
+                  <tr key={idx} style={{ borderBottom: "1px solid #2a2f37", opacity: inCart ? 0.5 : 1 }}>
+                    <td style={td}>{i.vendor}</td>
+                    <td style={{ ...td, textDecoration: inCart ? "line-through" : "none" }}>{i.item}</td>
+                    <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
+                    <td style={{ ...td, textAlign: "center" }}>{i.po}</td>
+                    <td style={{ ...td, textAlign: "center" }}><Sparkline history={i.history} /></td>
+                    <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? ACCENT : "#6b7480" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
+                    <td style={{ ...td, color: "#aab2bd", fontSize: 13 }}>{i.reason}</td>
+                    <td style={{ ...td, textAlign: "center" }}>
+                      <input type="checkbox" checked={inCart} onChange={() => onToggle(key)}
+                        aria-label={`Mark ${i.item} as added to cart`}
+                        style={{ width: 17, height: 17, accentColor: ACCENT, cursor: "pointer" }} />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
