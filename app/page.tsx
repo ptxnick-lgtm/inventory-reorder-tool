@@ -102,11 +102,6 @@ export default function Page() {
     catch (e: any) { setError("Couldn't save that change — is the item_flags table set up in Supabase? Details: " + e.message); }
   }
 
-  const hiddenList = useMemo(
-    () => Array.from(itemMeta.entries()).filter(([, m]) => isHiddenStatus(m.status)).map(([item, m]) => ({ item, status: m.status, note: m.note })).sort((a, b) => a.item.localeCompare(b.item)),
-    [itemMeta]
-  );
-
   const excludedNames = useMemo(() => vendors.filter((v) => v.excluded).map((v) => v.name), [vendors]);
   const productMap = useMemo(() => {
     const m = new Map<string, ProductRow>();
@@ -326,7 +321,6 @@ export default function Page() {
           catalogue={catalogueItems}
           itemMeta={itemMeta}
           onSaveMeta={handleSaveMeta}
-          hiddenItems={hiddenList}
           activeDate={activeDate}
           importedDates={importedDates}
           onPickDate={(d) => { setActiveDate(d); classifyFrom(allSnapshots, d, vendors); }}
@@ -413,7 +407,6 @@ interface DashboardProps {
   catalogue: { item: string; vendor: string }[];
   itemMeta: Map<string, ItemMeta>;
   onSaveMeta: (item: string, meta: ItemMeta) => void;
-  hiddenItems: { item: string; status: string; note: string }[];
   activeDate: string;
   importedDates: string[];
   onPickDate: (d: string) => void | Promise<void>;
@@ -423,9 +416,9 @@ interface DashboardProps {
   onDeleteSnapshot: (date: string) => void | Promise<void>;
 }
 
-type View = "list" | "revenue" | "compare";
+type View = "list" | "flagged" | "revenue" | "compare";
 
-function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, onSaveMeta, hiddenItems, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
+function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, onSaveMeta, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -502,7 +495,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
 
       {/* View tabs */}
       <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #333a44", flexWrap: "wrap" }}>
-        {([["list", "Reorder list"], ["revenue", "Revenue"], ["compare", "Compare items"]] as const).map(([key, label]) => (
+        {([["list", "Reorder list"], ["flagged", "Flagged"], ["revenue", "Revenue"], ["compare", "Compare items"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setView(key)}
@@ -545,9 +538,9 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
             </div>
           )}
           {openTier && <TierTable items={tierItems(openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} />}
-          {hiddenItems.length > 0 && <HiddenItems items={hiddenItems} onRestore={(item) => onSaveMeta(item, { status: "", note: itemMeta.get(item)?.note || "", tags: itemMeta.get(item)?.tags || "" })} />}
         </>
       )}
+      {view === "flagged" && <FlaggedTab itemMeta={itemMeta} catalogue={catalogue} onSaveMeta={onSaveMeta} />}
       {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
       {view === "compare" && <CompareItems periodSales={periodSales} catalogue={catalogue} />}
     </div>
@@ -611,32 +604,65 @@ function RowMenu({ item, meta, onSave }: { item: string; meta?: ItemMeta; onSave
   );
 }
 
-// Collapsible list of items flagged out of the reorder lists, with restore.
-function HiddenItems({ items, onRestore }: { items: { item: string; status: string; note: string }[]; onRestore: (item: string) => void }) {
-  const [open, setOpen] = useState(false);
+// Dedicated tab listing every flagged item (discontinued, one-time, or just
+// annotated with a note/tags), with inline editing and clearing.
+function FlaggedTab({ itemMeta, catalogue, onSaveMeta }: {
+  itemMeta: Map<string, ItemMeta>;
+  catalogue: { item: string; vendor: string }[];
+  onSaveMeta: (item: string, meta: ItemMeta) => void;
+}) {
+  const vendorOf = useMemo(() => new Map(catalogue.map((c) => [c.item, c.vendor])), [catalogue]);
+  const rows = useMemo(() =>
+    Array.from(itemMeta.entries())
+      .filter(([, m]) => m.status || m.note || m.tags)
+      .map(([item, m]) => ({ item, vendor: vendorOf.get(item) || "", ...m }))
+      .sort((a, b) => a.item.localeCompare(b.item)),
+    [itemMeta, vendorOf]);
+
   return (
-    <div style={{ ...card, marginTop: 16 }}>
-      <button onClick={() => setOpen((o) => !o)} style={{ background: "none", border: "none", color: "#aab2bd", cursor: "pointer", fontSize: 15, padding: 0 }}>
-        {open ? "▾" : "▸"} Hidden from reorder lists ({items.length})
-      </button>
-      {open && (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, marginTop: 12 }}>
-          <tbody>
-            {items.map((h) => (
-              <tr key={h.item} style={{ borderBottom: "1px solid #2a2f37" }}>
-                <td style={td}>
-                  <div>{h.item}</div>
-                  {h.note && <div style={{ color: "#e6c97a", fontSize: 12, fontStyle: "italic", marginTop: 2 }}>{h.note}</div>}
-                </td>
-                <td style={{ ...td, color: "#7d8794" }}>{FLAG_LABELS[h.status] || h.status}</td>
-                <td style={{ ...td, textAlign: "right" }}>
-                  <button onClick={() => onRestore(h.item)} style={{ ...btnGhost, padding: "4px 10px", fontSize: 13 }}>Restore</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+    <div style={{ marginTop: 20 }}>
+      <div style={{ ...card, marginTop: 0 }}>
+        <h3 style={{ marginTop: 0, fontSize: 16 }}>Flagged items ({rows.length})</h3>
+        <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 0 }}>
+          Everything you&apos;ve marked or annotated. Discontinued and one-time items are hidden from the reorder lists; notes and tags also show on the list itself.
+        </p>
+        {rows.length === 0 ? (
+          <p style={{ color: "#7d8794", fontSize: 14, marginBottom: 0 }}>No flagged items yet. Use the ⋯ menu on any reorder-list row to add a note, tags, or mark it discontinued.</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+                <th style={th}>Item</th>
+                <th style={th}>Status</th>
+                <th style={th}>Tags</th>
+                <th style={th}>Note</th>
+                <th style={{ ...th, width: 90 }}></th>
+              </tr></thead>
+              <tbody>
+                {rows.map((r) => {
+                  const tagList = (r.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+                  return (
+                    <tr key={r.item} style={{ borderBottom: "1px solid #2a2f37" }}>
+                      <td style={td}>{r.item}<div style={{ color: "#7d8794", fontSize: 12 }}>{r.vendor}</div></td>
+                      <td style={{ ...td, color: r.status ? "#e6c97a" : "#7d8794" }}>{r.status ? (FLAG_LABELS[r.status] || r.status) : "Active"}</td>
+                      <td style={td}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {tagList.map((t) => <span key={t} style={{ background: "#2a3340", color: "#9cc4ff", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>)}
+                        </div>
+                      </td>
+                      <td style={{ ...td, color: "#e6c97a", fontSize: 13, fontStyle: r.note ? "italic" : "normal" }}>{r.note || "—"}</td>
+                      <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
+                        <RowMenu item={r.item} meta={r} onSave={onSaveMeta} />
+                        <button onClick={() => onSaveMeta(r.item, { status: "", note: "", tags: "" })} style={{ ...btnGhost, padding: "4px 10px", fontSize: 13, marginLeft: 4 }}>Clear</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
