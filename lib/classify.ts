@@ -27,6 +27,7 @@ export interface ClassifyOptions {
   excludedVendors: string[];
   leadDaysByVendor: Record<string, number>;
   defaultLeadDays: number;
+  hiddenItems?: string[];
 }
 
 const MS_PER_DAY = 86400000;
@@ -60,9 +61,11 @@ export function classify(
   opts: ClassifyOptions
 ): ClassifiedItem[] {
   if (!latestDate) return [];
+  // Items the user has flagged (discontinued / one-time) are kept out entirely.
+  const hidden = new Set(opts.hiddenItems || []);
   // Drop any rows missing the fields we group and sort on, so a single bad row
   // can never throw mid-classification.
-  const valid = snapshots.filter((s) => s && s.snapshot_date && s.item && s.vendor);
+  const valid = snapshots.filter((s) => s && s.snapshot_date && s.item && s.vendor && !hidden.has(s.item));
 
   // Group all snapshots by item+vendor key
   const byKey = new Map<string, SnapshotRow[]>();

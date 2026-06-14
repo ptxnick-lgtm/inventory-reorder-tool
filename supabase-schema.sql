@@ -41,6 +41,14 @@ create table if not exists vendors (
   excluded   boolean not null default false
 );
 
+-- Per-item reorder flags set in the app (e.g. discontinued / one-time buy) so
+-- those items can be hidden from the reorder lists.
+create table if not exists item_flags (
+  item        text primary key,
+  status      text not null,
+  updated_at  timestamptz default now()
+);
+
 -- Per-product cost and sales price, entered by hand in the app. Drives the
 -- revenue dashboard (units sold x price/cost between snapshots).
 create table if not exists products (

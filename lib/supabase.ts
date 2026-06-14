@@ -167,6 +167,22 @@ export async function upsertProducts(rows: ProductRow[]) {
   }
 }
 
+export async function fetchItemFlags(): Promise<{ item: string; status: string }[]> {
+  const { data, error } = await supabase.from("item_flags").select("item,status");
+  if (error) throw error;
+  return (data || []) as { item: string; status: string }[];
+}
+
+export async function setItemFlag(item: string, status: string | null) {
+  if (status === null) {
+    const { error } = await supabase.from("item_flags").delete().eq("item", item);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from("item_flags").upsert({ item, status, updated_at: new Date().toISOString() }, { onConflict: "item" });
+    if (error) throw error;
+  }
+}
+
 export async function updateVendor(name: string, patch: Partial<VendorRow>) {
   const { error } = await supabase.from("vendors").update(patch).eq("name", name);
   if (error) throw error;

@@ -5,7 +5,8 @@ import { parseCSVText, parseXLSX, parsePricingCSV, ParseResult } from "@/lib/par
 import { classify, inventoryChanges, ClassifiedItem, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
 import {
   fetchVendors, fetchAllSnapshots, insertSnapshot, fetchImportedDates,
-  updateVendor, addVendor, fetchProducts, upsertProduct, upsertProducts, deleteSnapshot, VendorRow, ProductRow,
+  updateVendor, addVendor, fetchProducts, upsertProduct, upsertProducts, deleteSnapshot,
+  fetchItemFlags, setItemFlag, VendorRow, ProductRow,
 } from "@/lib/supabase";
 import { exportSortedPdf } from "@/lib/exportPdf";
 
@@ -47,6 +48,7 @@ export default function Page() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPricing, setShowPricing] = useState(false);
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [itemFlags, setItemFlags] = useState<Map<string, string>>(new Map());
   const [dragOver, setDragOver] = useState(false);
   const [booting, setBooting] = useState(true);
   const [loadPct, setLoadPct] = useState(0);
@@ -56,9 +58,11 @@ export default function Page() {
       const [v, d] = await Promise.all([fetchVendors(), fetchImportedDates()]);
       setVendors(v);
       setImportedDates(d);
-      // Products are optional (the table may not exist yet) — never block on them.
+      // Products and item flags are optional (their tables may not exist yet).
       try { setProducts(await fetchProducts()); } catch { /* pricing not set up yet */ }
-      if (d.length) { setActiveDate(d[d.length - 1]); await runClassify(d[d.length - 1], v); }
+      let flags = new Map<string, string>();
+      try { flags = new Map((await fetchItemFlags()).map((f) => [f.item, f.status])); setItemFlags(flags); } catch { /* flags not set up yet */ }
+      if (d.length) { setActiveDate(d[d.length - 1]); await runClassify(d[d.length - 1], v, [...flags.keys()]); }
     } catch (e: any) {
       setError("Could not connect to the database. Check that Supabase is set up (see SETUP.md). Details: " + e.message);
     }
@@ -67,20 +71,32 @@ export default function Page() {
   useEffect(() => { loadDb().finally(() => setBooting(false)); }, [loadDb]);
 
   // Re-run classification from snapshots already in memory (no network) — used
-  // when only the selected date changes.
-  function classifyFrom(snaps: SnapshotRow[], date: string, vendorList: VendorRow[]) {
+  // when only the selected date (or hidden-item flags) change.
+  function classifyFrom(snaps: SnapshotRow[], date: string, vendorList: VendorRow[], hidden?: string[]) {
     const excluded = vendorList.filter((v) => v.excluded).map((v) => v.name);
     const leadMap: Record<string, number> = {};
     vendorList.forEach((v) => (leadMap[v.name] = v.lead_days));
-    setClassified(classify(snaps, date, { excludedVendors: excluded, leadDaysByVendor: leadMap, defaultLeadDays: 14 }));
+    const hiddenItems = hidden ?? Array.from(itemFlags.keys());
+    setClassified(classify(snaps, date, { excludedVendors: excluded, leadDaysByVendor: leadMap, defaultLeadDays: 14, hiddenItems }));
   }
 
   // Fetch all snapshots, then classify — used on load and after upload/delete.
-  async function runClassify(date: string, vendorList: VendorRow[]) {
+  async function runClassify(date: string, vendorList: VendorRow[], hidden?: string[]) {
     const snaps = (await fetchAllSnapshots((done, total) => setLoadPct(total ? Math.round((done / total) * 100) : 0))) as SnapshotRow[];
     setAllSnapshots(snaps);
-    classifyFrom(snaps, date, vendorList);
+    classifyFrom(snaps, date, vendorList, hidden);
   }
+
+  async function handleFlag(item: string, status: string | null) {
+    const next = new Map(itemFlags);
+    if (status === null) next.delete(item); else next.set(item, status);
+    setItemFlags(next);
+    classifyFrom(allSnapshots, activeDate, vendors, [...next.keys()]);
+    try { await setItemFlag(item, status); }
+    catch (e: any) { setError("Couldn't save that change — is the item_flags table set up in Supabase? Details: " + e.message); }
+  }
+
+  const hiddenList = useMemo(() => Array.from(itemFlags.entries()).map(([item, status]) => ({ item, status })).sort((a, b) => a.item.localeCompare(b.item)), [itemFlags]);
 
   const excludedNames = useMemo(() => vendors.filter((v) => v.excluded).map((v) => v.name), [vendors]);
   const productMap = useMemo(() => {
@@ -299,6 +315,8 @@ export default function Page() {
           productMap={productMap}
           periodSales={periodSales}
           catalogue={catalogueItems}
+          onFlag={handleFlag}
+          hiddenItems={hiddenList}
           activeDate={activeDate}
           importedDates={importedDates}
           onPickDate={(d) => { setActiveDate(d); classifyFrom(allSnapshots, d, vendors); }}
@@ -383,6 +401,8 @@ interface DashboardProps {
   productMap: Map<string, ProductRow>;
   periodSales: Period[];
   catalogue: { item: string; vendor: string }[];
+  onFlag: (item: string, status: string | null) => void;
+  hiddenItems: { item: string; status: string }[];
   activeDate: string;
   importedDates: string[];
   onPickDate: (d: string) => void | Promise<void>;
@@ -394,7 +414,7 @@ interface DashboardProps {
 
 type View = "list" | "revenue" | "compare";
 
-function Dashboard({ classified, productMap, periodSales, catalogue, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
+function Dashboard({ classified, productMap, periodSales, catalogue, onFlag, hiddenItems, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -484,7 +504,8 @@ function Dashboard({ classified, productMap, periodSales, catalogue, activeDate,
               </div>
             ))}
           </div>
-          {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} />}
+          {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} onFlag={onFlag} />}
+          {hiddenItems.length > 0 && <HiddenItems items={hiddenItems} onRestore={(item) => onFlag(item, null)} />}
         </>
       )}
       {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
@@ -493,14 +514,66 @@ function Dashboard({ classified, productMap, periodSales, catalogue, activeDate,
   );
 }
 
+const FLAG_LABELS: Record<string, string> = { discontinued: "Discontinued", one_time: "One-time buy" };
+
+// Per-row ⋯ menu for flagging an item so it drops off the reorder lists.
+function RowMenu({ item, onFlag }: { item: string; onFlag: (item: string, status: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const menuItem: React.CSSProperties = { display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e6e8eb", padding: "8px 12px", fontSize: 13, cursor: "pointer" };
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button onClick={() => setOpen((o) => !o)} aria-label={`Options for ${item}`}
+        style={{ background: "none", border: "none", color: "#7d8794", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}>⋯</button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 41, background: "#1e232b", border: "1px solid #333a44", borderRadius: 8, width: 230, boxShadow: "0 8px 24px rgba(0,0,0,.5)", overflow: "hidden", textAlign: "left" }}>
+            <div style={{ padding: "8px 12px", fontSize: 11, color: "#7d8794", borderBottom: "1px solid #2a2f37" }}>Hide from reorder lists</div>
+            <button style={menuItem} onClick={() => { onFlag(item, "discontinued"); setOpen(false); }}>Don&apos;t reorder — discontinued</button>
+            <button style={menuItem} onClick={() => { onFlag(item, "one_time"); setOpen(false); }}>One-time buy</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Collapsible list of items flagged out of the reorder lists, with restore.
+function HiddenItems({ items, onRestore }: { items: { item: string; status: string }[]; onRestore: (item: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ ...card, marginTop: 16 }}>
+      <button onClick={() => setOpen((o) => !o)} style={{ background: "none", border: "none", color: "#aab2bd", cursor: "pointer", fontSize: 15, padding: 0 }}>
+        {open ? "▾" : "▸"} Hidden from reorder lists ({items.length})
+      </button>
+      {open && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, marginTop: 12 }}>
+          <tbody>
+            {items.map((h) => (
+              <tr key={h.item} style={{ borderBottom: "1px solid #2a2f37" }}>
+                <td style={td}>{h.item}</td>
+                <td style={{ ...td, color: "#7d8794" }}>{FLAG_LABELS[h.status] || h.status}</td>
+                <td style={{ ...td, textAlign: "right" }}>
+                  <button onClick={() => onRestore(h.item)} style={{ ...btnGhost, padding: "4px 10px", fontSize: 13 }}>Restore</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 const cartKey = (i: { item: string; vendor: string }) => i.item + "||" + i.vendor;
 
-function TierTable({ items, tier, cart, onToggle, onClear }: {
+function TierTable({ items, tier, cart, onToggle, onClear, onFlag }: {
   items: ClassifiedItem[];
   tier: Tier;
   cart: Set<string>;
   onToggle: (key: string) => void;
   onClear: (keys: string[]) => void;
+  onFlag: (item: string, status: string | null) => void;
 }) {
   const sorted = [...items].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.item.localeCompare(b.item));
   const checkedHere = sorted.filter((i) => cart.has(cartKey(i))).map(cartKey);
@@ -526,6 +599,7 @@ function TierTable({ items, tier, cart, onToggle, onClear }: {
                 <th style={{ ...th, textAlign: "center" }}>Order qty</th>
                 <th style={th}>Note</th>
                 <th style={{ ...th, textAlign: "center" }}>In cart</th>
+                <th style={{ ...th, width: 28 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -545,6 +619,9 @@ function TierTable({ items, tier, cart, onToggle, onClear }: {
                       <input type="checkbox" checked={inCart} onChange={() => onToggle(key)}
                         aria-label={`Mark ${i.item} as added to cart`}
                         style={{ width: 17, height: 17, accentColor: ACCENT, cursor: "pointer" }} />
+                    </td>
+                    <td style={{ ...td, textAlign: "center" }}>
+                      <RowMenu item={i.item} onFlag={onFlag} />
                     </td>
                   </tr>
                 );
