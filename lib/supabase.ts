@@ -120,6 +120,16 @@ export async function deleteSnapshot(date: string) {
   if (e2) throw e2;
 }
 
+export async function upsertProducts(rows: ProductRow[]) {
+  const CHUNK = 500;
+  const stamp = new Date().toISOString();
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const payload = rows.slice(i, i + CHUNK).map((r) => ({ item: r.item, cost: r.cost, price: r.price, updated_at: stamp }));
+    const { error } = await supabase.from("products").upsert(payload, { onConflict: "item" });
+    if (error) throw error;
+  }
+}
+
 export async function updateVendor(name: string, patch: Partial<VendorRow>) {
   const { error } = await supabase.from("vendors").update(patch).eq("name", name);
   if (error) throw error;

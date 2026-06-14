@@ -131,6 +131,37 @@ function rowsToTable(raw: string[][]): ParseResult {
   };
 }
 
+export interface PricingRow { item: string; cost: number; price: number; }
+
+// Parse a QuickBooks "Inventory Valuation" style CSV that carries Avg Cost and
+// Sales Price per item (item is the first, header-less column). Used to bulk-fill
+// product pricing for the revenue dashboard.
+export function parsePricingCSV(text: string): PricingRow[] {
+  const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
+  const rows = parsed.data as string[][];
+  let headerIdx = -1, costIdx = -1, priceIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const lc = rows[i].map((c) => String(c || "").toLowerCase().trim());
+    const ci = lc.findIndex((c) => c.includes("avg cost") || c === "cost" || c.includes("average cost"));
+    const pi = lc.findIndex((c) => c.includes("sales price") || c === "price");
+    if (ci !== -1 && pi !== -1) { headerIdx = i; costIdx = ci; priceIdx = pi; break; }
+  }
+  if (headerIdx === -1) {
+    throw new Error("Could not find 'Avg Cost' and 'Sales Price' columns in this file. Make sure it's the inventory valuation / pricing export.");
+  }
+  const out: PricingRow[] = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    const item = String(r[0] || "").trim();
+    if (!item || /^(inventory|total)\b/i.test(item)) continue;
+    const cost = parseFloat(String(r[costIdx] || "").replace(/[^0-9.\-]/g, ""));
+    const price = parseFloat(String(r[priceIdx] || "").replace(/[^0-9.\-]/g, ""));
+    if (Number.isNaN(cost) && Number.isNaN(price)) continue;
+    out.push({ item, cost: Number.isNaN(cost) ? 0 : cost, price: Number.isNaN(price) ? 0 : price });
+  }
+  return out;
+}
+
 export function parseCSVText(text: string, filename = ""): ParseResult {
   const lines = text.split(/\r?\n/);
   // Try the QuickBooks space-aligned format first.

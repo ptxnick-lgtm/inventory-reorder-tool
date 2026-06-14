@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { parseCSVText, parseXLSX, ParseResult } from "@/lib/parser";
+import { parseCSVText, parseXLSX, parsePricingCSV, ParseResult } from "@/lib/parser";
 import { classify, snapshotTrend, inventoryChanges, ClassifiedItem, SnapshotStat, InventoryChange, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
 import {
   fetchVendors, fetchAllSnapshots, insertSnapshot, fetchImportedDates,
-  updateVendor, addVendor, fetchProducts, upsertProduct, deleteSnapshot, VendorRow, ProductRow,
+  updateVendor, addVendor, fetchProducts, upsertProduct, upsertProducts, deleteSnapshot, VendorRow, ProductRow,
 } from "@/lib/supabase";
 import { exportSortedPdf } from "@/lib/exportPdf";
 
@@ -106,6 +106,16 @@ export default function Page() {
     });
   }
 
+  // Bulk-load cost/price from a pricing export (Avg Cost + Sales Price columns).
+  async function importPricing(file: File): Promise<number> {
+    const rows = parsePricingCSV(await file.text());
+    if (rows.length) {
+      await upsertProducts(rows);
+      setProducts(await fetchProducts());
+    }
+    return rows.length;
+  }
+
   async function handleFile(file: File) {
     setError(""); setStage("parsing"); setFileName(file.name);
     try {
@@ -178,7 +188,7 @@ export default function Page() {
       {error && <div style={errBox}>{error}</div>}
 
       {showSettings && <VendorSettings vendors={vendors} onChange={loadDb} />}
-      {showPricing && <ProductPricing items={catalogueItems} productMap={productMap} onSave={saveProduct} />}
+      {showPricing && <ProductPricing items={catalogueItems} productMap={productMap} onSave={saveProduct} onImport={importPricing} />}
 
       {/* Upload zone */}
       {(stage === "idle" || stage === "parsing") && (
@@ -418,7 +428,7 @@ function TierTable({ items, tier }: { items: ClassifiedItem[]; tier: Tier }) {
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+              <tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
                 <th style={th}>Vendor</th><th style={th}>Item</th>
                 <th style={{ ...th, textAlign: "center" }}>On hand</th>
                 <th style={{ ...th, textAlign: "center" }}>On order</th>
@@ -429,7 +439,7 @@ function TierTable({ items, tier }: { items: ClassifiedItem[]; tier: Tier }) {
             </thead>
             <tbody>
               {sorted.map((i, idx) => (
-                <tr key={idx} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <tr key={idx} style={{ borderBottom: "1px solid #2a2f37" }}>
                   <td style={td}>{i.vendor}</td>
                   <td style={td}>{i.item}</td>
                   <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
@@ -529,14 +539,14 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
           <p style={{ color: "#9aa3ad", fontSize: 14 }}>Nothing needs reordering right now.</p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
               <th style={th}>Vendor</th>
               <th style={{ ...th, textAlign: "center" }}>Items to order</th>
               <th style={{ ...th, textAlign: "center" }}>Suggested units</th>
             </tr></thead>
             <tbody>
               {vendorReorder.map((v) => (
-                <tr key={v.vendor} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <tr key={v.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
                   <td style={td}>{v.vendor}</td>
                   <td style={{ ...td, textAlign: "center" }}>{v.count}</td>
                   <td style={{ ...td, textAlign: "center" }}>{v.units > 0 ? `~${v.units}` : "—"}</td>
@@ -552,13 +562,13 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
         <div style={{ ...card, marginTop: 20 }}>
           <h3 style={{ marginTop: 0, fontSize: 16 }}>Dead stock <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— in stock but not selling, consider not reordering</span></h3>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
               <th style={th}>Vendor</th><th style={th}>Item</th>
               <th style={{ ...th, textAlign: "center" }}>On hand</th>
             </tr></thead>
             <tbody>
               {deadStock.slice(0, 12).map((i) => (
-                <tr key={i.item + i.vendor} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <tr key={i.item + i.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
                   <td style={td}>{i.vendor}</td>
                   <td style={td}>{i.item}</td>
                   <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
@@ -662,7 +672,7 @@ function ChangeTable({ title, color, rows }: { title: string; color: string; row
       {rows.length === 0 ? <p style={{ color: "#9aa3ad", fontSize: 14 }}>Nothing here for this day.</p> : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
               <th style={th}>Vendor</th><th style={th}>Item</th>
               <th style={{ ...th, textAlign: "center" }}>Was</th>
               <th style={{ ...th, textAlign: "center" }}>Now</th>
@@ -670,7 +680,7 @@ function ChangeTable({ title, color, rows }: { title: string; color: string; row
             </tr></thead>
             <tbody>
               {rows.map((c) => (
-                <tr key={c.item + c.vendor} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <tr key={c.item + c.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
                   <td style={td}>{c.vendor}</td>
                   <td style={td}>{c.item}</td>
                   <td style={{ ...td, textAlign: "center", color: "#8b94a0" }}>{c.prevQoh}</td>
@@ -796,14 +806,14 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
             <p style={{ color: "#9aa3ad", fontSize: 14 }}>No sales recorded, or no prices set yet.</p>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
                 <th style={th}>Item</th><th style={th}>Vendor</th>
                 <th style={{ ...th, textAlign: "center" }}>Units sold</th>
                 <th style={{ ...th, textAlign: "right" }}>Revenue</th>
               </tr></thead>
               <tbody>
                 {topSellers.map((s) => (
-                  <tr key={s.item + s.vendor} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                  <tr key={s.item + s.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
                     <td style={td}>{s.item}</td>
                     <td style={td}>{s.vendor}</td>
                     <td style={{ ...td, textAlign: "center" }}>{s.units}</td>
@@ -821,14 +831,29 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
 
 // ---- Product pricing editor -----------------------------------------------
 
-function ProductPricing({ items, productMap, onSave }: {
+function ProductPricing({ items, productMap, onSave, onImport }: {
   items: { item: string; vendor: string }[];
   productMap: Map<string, ProductRow>;
   onSave: (item: string, cost: number, price: number) => Promise<void>;
+  onImport: (file: File) => Promise<number>;
 }) {
   const [filter, setFilter] = useState("");
   const [edits, setEdits] = useState<Record<string, { cost: string; price: string }>>({});
   const [savedItem, setSavedItem] = useState("");
+  const [importMsg, setImportMsg] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  async function handleImport(file: File) {
+    setImporting(true); setImportMsg("");
+    try {
+      const n = await onImport(file);
+      setImportMsg(n > 0 ? `Imported pricing for ${n} products.` : "No priced rows found in that file.");
+    } catch (e: any) {
+      setImportMsg("Import failed: " + e.message);
+    } finally {
+      setImporting(false);
+    }
+  }
 
   const filtered = items.filter((r) => r.item.toLowerCase().includes(filter.toLowerCase()));
   const shown = filtered.slice(0, 200);
@@ -853,14 +878,25 @@ function ProductPricing({ items, productMap, onSave }: {
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>Product pricing</h2>
-      <p style={{ color: "#aab2bd", fontSize: 14 }}>Enter what each product costs you and what you sell it for. These save automatically and power the Revenue tab. Search to find items quickly.</p>
+      <p style={{ color: "#aab2bd", fontSize: 14 }}>Enter what each product costs you and what you sell it for, or import them all at once from a pricing export. These power the Revenue tab.</p>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12, paddingBottom: 14, borderBottom: "1px solid #333a44" }}>
+        <label style={{ ...btnPrimary, opacity: importing ? 0.6 : 1 }}>
+          {importing ? "Importing…" : "Import prices from CSV"}
+          <input type="file" accept=".csv" style={{ display: "none" }} disabled={importing}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
+        </label>
+        <span style={{ color: "#9aa3ad", fontSize: 13 }}>Use a report with “Avg Cost” and “Sales Price” columns.</span>
+        {importMsg && <span style={{ color: importMsg.startsWith("Import failed") ? "#f0a3a3" : "#34d399", fontSize: 13 }}>{importMsg}</span>}
+      </div>
+
       <input
         type="text" placeholder="Search products…" value={filter}
         onChange={(e) => setFilter(e.target.value)} style={{ ...input, width: "100%", maxWidth: 320, marginBottom: 12 }}
       />
       <div style={{ maxHeight: 380, overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
             <th style={th}>Item</th><th style={th}>Vendor</th>
             <th style={{ ...th, textAlign: "center" }}>Cost ($)</th>
             <th style={{ ...th, textAlign: "center" }}>Price ($)</th>
@@ -868,7 +904,7 @@ function ProductPricing({ items, productMap, onSave }: {
           </tr></thead>
           <tbody>
             {shown.map((r) => (
-              <tr key={r.item} style={{ borderBottom: "1px solid #f0f0f0" }}>
+              <tr key={r.item} style={{ borderBottom: "1px solid #2a2f37" }}>
                 <td style={td}>{r.item}</td>
                 <td style={{ ...td, color: "#9aa3ad" }}>{r.vendor}</td>
                 <td style={{ ...td, textAlign: "center" }}>
@@ -1013,12 +1049,12 @@ function VendorSettings({ vendors, onChange }: { vendors: VendorRow[]; onChange:
       <p style={{ color: "#aab2bd", fontSize: 14 }}>Exclude vendors you don&apos;t reorder here, and set how many days each takes to deliver (drives the &quot;order now&quot; timing).</p>
       <div style={{ maxHeight: 320, overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
+          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
             <th style={th}>Vendor</th><th style={{ ...th, textAlign: "center" }}>Excluded</th><th style={{ ...th, textAlign: "center" }}>Lead days</th>
           </tr></thead>
           <tbody>
             {vendors.map((v) => (
-              <tr key={v.name} style={{ borderBottom: "1px solid #f0f0f0", opacity: saving === v.name ? 0.5 : 1 }}>
+              <tr key={v.name} style={{ borderBottom: "1px solid #2a2f37", opacity: saving === v.name ? 0.5 : 1 }}>
                 <td style={td}>{v.name}</td>
                 <td style={{ ...td, textAlign: "center" }}>
                   <input type="checkbox" checked={v.excluded} onChange={() => toggle(v)} />
