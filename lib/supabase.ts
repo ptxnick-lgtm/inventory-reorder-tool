@@ -17,27 +17,49 @@ export async function fetchVendors(): Promise<VendorRow[]> {
   return data as VendorRow[];
 }
 
-export async function fetchAllSnapshots() {
+export async function fetchAllSnapshots(onProgress?: (done: number, total: number) => void) {
   // Pull every snapshot row. Supabase caps a single select at 1,000 rows, and
   // one snapshot alone is ~1,600 rows, so we page through with .range() until a
   // short page tells us we've reached the end. Order by id for stable paging
   // (classify re-sorts by date internally).
   const PAGE = 1000;
-  const all: any[] = [];
-  // reorder_min may not exist yet (before the migration is run) — degrade gracefully.
+
+  // Probe once whether reorder_min exists (added by a later migration).
   let cols = "snapshot_date,item,vendor,qoh,po,reorder_min";
-  for (let from = 0; ; from += PAGE) {
-    let { data, error } = await supabase.from("snapshots").select(cols).order("id").range(from, from + PAGE - 1);
-    if (error && cols.includes("reorder_min")) {
-      cols = "snapshot_date,item,vendor,qoh,po";
-      ({ data, error } = await supabase.from("snapshots").select(cols).order("id").range(from, from + PAGE - 1));
+  const probe = await supabase.from("snapshots").select(cols).limit(1);
+  if (probe.error) cols = "snapshot_date,item,vendor,qoh,po";
+
+  // Total row count so we can fetch all pages in parallel (much faster than
+  // walking them one-by-one as history grows).
+  const head = await supabase.from("snapshots").select("id", { count: "exact", head: true });
+  const total = typeof head.count === "number" ? head.count : 0;
+
+  if (!total) {
+    // Unknown count — fall back to a simple sequential walk.
+    const all: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from("snapshots").select(cols).order("id").range(from, from + PAGE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      all.push(...data);
+      onProgress?.(all.length, all.length);
+      if (data.length < PAGE) break;
     }
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < PAGE) break;
+    return all;
   }
-  return all;
+
+  const pageCount = Math.ceil(total / PAGE);
+  let done = 0;
+  const pages = await Promise.all(
+    Array.from({ length: pageCount }, (_, i) => i).map(async (i) => {
+      const { data, error } = await supabase.from("snapshots").select(cols).order("id").range(i * PAGE, i * PAGE + PAGE - 1);
+      if (error) throw error;
+      done += 1;
+      onProgress?.(done, pageCount);
+      return data || [];
+    })
+  );
+  return pages.flat();
 }
 
 export async function fetchImportedDates(): Promise<string[]> {

@@ -48,6 +48,8 @@ export default function Page() {
   const [showPricing, setShowPricing] = useState(false);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [booting, setBooting] = useState(true);
+  const [loadPct, setLoadPct] = useState(0);
 
   const loadDb = useCallback(async () => {
     try {
@@ -62,7 +64,7 @@ export default function Page() {
     }
   }, []);
 
-  useEffect(() => { loadDb(); }, [loadDb]);
+  useEffect(() => { loadDb().finally(() => setBooting(false)); }, [loadDb]);
 
   // Re-run classification from snapshots already in memory (no network) — used
   // when only the selected date changes.
@@ -75,7 +77,7 @@ export default function Page() {
 
   // Fetch all snapshots, then classify — used on load and after upload/delete.
   async function runClassify(date: string, vendorList: VendorRow[]) {
-    const snaps = (await fetchAllSnapshots()) as SnapshotRow[];
+    const snaps = (await fetchAllSnapshots((done, total) => setLoadPct(total ? Math.round((done / total) * 100) : 0))) as SnapshotRow[];
     setAllSnapshots(snaps);
     classifyFrom(snaps, date, vendorList);
   }
@@ -193,6 +195,14 @@ export default function Page() {
   };
 
   const tierCounts = (t: Tier) => classified?.filter((i) => i.tier === t).length ?? 0;
+
+  if (booting) {
+    return (
+      <PasswordGate>
+        <BootScreen pct={loadPct} />
+      </PasswordGate>
+    );
+  }
 
   return (
     <PasswordGate>
@@ -315,6 +325,21 @@ export default function Page() {
 
 // Simple shared-password gate. Note: this is a convenience lock for the UI — the
 // real data protection is Supabase row-level security on the database side.
+function BootScreen({ pct }: { pct: number }) {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 340, textAlign: "center" }}>
+        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 6px", color: "#e6e8eb" }}>Inventory Reorder Tool</h1>
+        <p style={{ color: "#aab2bd", fontSize: 14, marginTop: 0 }}>Loading your inventory…</p>
+        <div style={{ background: "#232932", borderRadius: 999, height: 8, overflow: "hidden", border: "1px solid #333a44" }}>
+          <div style={{ width: `${Math.max(6, pct)}%`, background: ACCENT, height: "100%", borderRadius: 999, transition: "width .25s ease" }} />
+        </div>
+        <p style={{ color: "#7d8794", fontSize: 12, marginTop: 8 }}>{pct > 0 ? `${pct}%` : "Connecting…"}</p>
+      </div>
+    </div>
+  );
+}
+
 function PasswordGate({ children }: { children: React.ReactNode }) {
   const [unlocked, setUnlocked] = useState(false);
   const [ready, setReady] = useState(false);
