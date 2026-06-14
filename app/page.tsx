@@ -142,10 +142,10 @@ export default function Page() {
   const tierCounts = (t: Tier) => classified?.filter((i) => i.tier === t).length ?? 0;
 
   return (
+    <PasswordGate>
     <main style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <h1 className="western" style={{ fontSize: 30, margin: 0, color: RED, display: "flex", alignItems: "center", gap: 12 }}>
-          <span aria-hidden="true" style={{ fontSize: 30 }}>🐎</span>
+        <h1 style={{ fontSize: 26, fontWeight: 600, margin: 0, color: "#e6e8eb" }}>
           Inventory Reorder Tool
         </h1>
         <div style={{ display: "flex", gap: 8 }}>
@@ -157,9 +157,9 @@ export default function Page() {
           </button>
         </div>
       </div>
-      <div style={{ height: 3, background: RED, borderRadius: 2, margin: "10px 0 0", maxWidth: 200 }} />
-      <p style={{ color: "#6b4a2b", marginTop: 10, fontStyle: "italic" }}>
-        Wrangle your QuickBooks inventory — drop a CSV or Excel export below and get a sorted reorder list, partner.
+      <div style={{ height: 2, background: ACCENT, borderRadius: 2, margin: "10px 0 0", maxWidth: 160 }} />
+      <p style={{ color: "#aab2bd", marginTop: 10 }}>
+        Export your inventory from QuickBooks as CSV or Excel, drop it below, and get a sorted reorder list.
       </p>
 
       {error && <div style={errBox}>{error}</div>}
@@ -173,14 +173,14 @@ export default function Page() {
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
-          style={{ ...dropZone, borderColor: dragOver ? RED : "#b08d57", background: dragOver ? "#f3e7cc" : "#fbf6ea" }}
+          style={{ ...dropZone, borderColor: dragOver ? ACCENT : "#3a414c", background: dragOver ? "#2a3340" : "#1e232b" }}
         >
           {stage === "parsing" ? (
             <p>Reading {fileName}…</p>
           ) : (
             <>
               <p style={{ fontSize: 16, margin: 0 }}>Drag a CSV or Excel file here</p>
-              <p style={{ color: "#888", margin: "8px 0 16px" }}>or</p>
+              <p style={{ color: "#9aa3ad", margin: "8px 0 16px" }}>or</p>
               <label style={btnPrimary}>
                 Choose file
                 <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }}
@@ -215,7 +215,7 @@ export default function Page() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
             <label>Snapshot date:</label>
             <input type="date" value={snapshotDate} onChange={(e) => setSnapshotDate(e.target.value)} style={input} />
-            {parseResult.detectedDate && <span style={{ color: "#888", fontSize: 13 }}>(auto-detected from file)</span>}
+            {parseResult.detectedDate && <span style={{ color: "#9aa3ad", fontSize: 13 }}>(auto-detected from file)</span>}
           </div>
           <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
             <button onClick={confirmSave} style={btnPrimary}>Save & analyze</button>
@@ -245,15 +245,56 @@ export default function Page() {
       )}
 
       {!classified && stage === "idle" && !error && (
-        <p style={{ color: "#888", marginTop: 24 }}>No inventory uploaded yet. Drop your first file above to begin.</p>
+        <p style={{ color: "#9aa3ad", marginTop: 24 }}>No inventory uploaded yet. Drop your first file above to begin.</p>
       )}
 
-      <footer style={{ textAlign: "center", marginTop: 56, paddingTop: 16, borderTop: "1px solid #d8c6a0" }}>
-        <span aria-hidden="true" style={{ color: RED, opacity: 0.22, fontSize: 11, fontStyle: "italic", letterSpacing: 1 }}>
-          ⚘ love u mommy ⚘
+      <footer style={{ textAlign: "center", marginTop: 56, paddingTop: 16, borderTop: "1px solid #2a2f37" }}>
+        <span aria-hidden="true" style={{ color: "#5b6470", fontSize: 11, fontStyle: "italic", letterSpacing: 1 }}>
+          ♥ love u mommy ♥
         </span>
       </footer>
     </main>
+    </PasswordGate>
+  );
+}
+
+// Simple shared-password gate. Note: this is a convenience lock for the UI — the
+// real data protection is Supabase row-level security on the database side.
+function PasswordGate({ children }: { children: React.ReactNode }) {
+  const [unlocked, setUnlocked] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    setUnlocked(localStorage.getItem("ir_unlocked") === "yes");
+    setReady(true);
+  }, []);
+
+  if (!ready) return null;
+  if (unlocked) return <>{children}</>;
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pw === "1287") { localStorage.setItem("ir_unlocked", "yes"); setUnlocked(true); }
+    else { setErr(true); setPw(""); }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <form onSubmit={submit} style={{ ...card, marginTop: 0, width: "100%", maxWidth: 340, textAlign: "center" }}>
+        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", color: "#e6e8eb" }}>Inventory Reorder Tool</h1>
+        <p style={{ color: "#aab2bd", fontSize: 14, marginTop: 0 }}>Enter the password to continue.</p>
+        <input
+          type="password" autoFocus value={pw}
+          onChange={(e) => { setPw(e.target.value); setErr(false); }}
+          placeholder="Password"
+          style={{ ...input, width: "100%", textAlign: "center", fontSize: 16, padding: "10px 12px", boxSizing: "border-box" }}
+        />
+        {err && <p style={{ color: "#f0a3a3", fontSize: 13, margin: "10px 0 0" }}>Incorrect password.</p>}
+        <button type="submit" style={{ ...btnPrimary, width: "100%", marginTop: 14 }}>Unlock</button>
+      </form>
+    </div>
   );
 }
 
@@ -281,12 +322,7 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <label style={{ fontSize: 14, color: "#666" }}>Snapshot:</label>
-          <select value={activeDate} onChange={(e) => onPickDate(e.target.value)} style={input}>
-            {importedDates.slice().reverse().map((d: string) => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
+        <SnapshotCalendar importedDates={importedDates} activeDate={activeDate} onPick={(d) => onPickDate(d)} />
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={onExport} style={btnPrimary}>Download PDF</button>
           <button onClick={onNewUpload} style={btnGhost}>Upload new file</button>
@@ -294,7 +330,7 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
       </div>
 
       {/* View tabs */}
-      <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #333a44", flexWrap: "wrap" }}>
         {([["list", "Reorder list"], ["changes", "Daily changes"], ["insights", "Insights"], ["revenue", "Revenue"]] as const).map(([key, label]) => (
           <button
             key={key}
@@ -302,9 +338,9 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
             style={{
               background: "none", border: "none", cursor: "pointer", fontSize: 15,
               padding: "10px 16px", marginBottom: -1,
-              color: view === key ? RED : "#7a5c3a",
+              color: view === key ? ACCENT : "#aab2bd",
               fontWeight: view === key ? 600 : 400,
-              borderBottom: view === key ? `2px solid ${RED}` : "2px solid transparent",
+              borderBottom: view === key ? `2px solid ${ACCENT}` : "2px solid transparent",
             }}
           >
             {label}
@@ -318,7 +354,7 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
             {tiers.map((t) => (
               <div key={t} onClick={() => setOpenTier(t)} style={{ ...statCard, borderTop: `4px solid ${TIER_META[t].color}`, cursor: "pointer", opacity: openTier === t ? 1 : 0.85 }}>
                 <div style={{ fontSize: 28, fontWeight: 700 }}>{tierCounts(t)}</div>
-                <div style={{ color: "#555", fontSize: 14 }}>{TIER_META[t].label}</div>
+                <div style={{ color: "#aab2bd", fontSize: 14 }}>{TIER_META[t].label}</div>
               </div>
             ))}
           </div>
@@ -337,7 +373,7 @@ function TierTable({ items, tier }: { items: ClassifiedItem[]; tier: Tier }) {
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <h3 style={{ marginTop: 0, color: TIER_META[tier].color }}>{TIER_META[tier].label} — {items.length} items</h3>
-      {sorted.length === 0 ? <p style={{ color: "#888" }}>Nothing in this category.</p> : (
+      {sorted.length === 0 ? <p style={{ color: "#9aa3ad" }}>Nothing in this category.</p> : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
@@ -358,8 +394,8 @@ function TierTable({ items, tier }: { items: ClassifiedItem[]; tier: Tier }) {
                   <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
                   <td style={{ ...td, textAlign: "center" }}>{i.po}</td>
                   <td style={{ ...td, textAlign: "center" }}><Sparkline history={i.history} /></td>
-                  <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? RED : "#bbb" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
-                  <td style={{ ...td, color: "#666", fontSize: 13 }}>{i.reason}</td>
+                  <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? ACCENT : "#6b7480" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
+                  <td style={{ ...td, color: "#aab2bd", fontSize: 13 }}>{i.reason}</td>
                 </tr>
               ))}
             </tbody>
@@ -417,7 +453,7 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
       <div style={{ ...card, marginTop: 20 }}>
         <h3 style={{ marginTop: 0, fontSize: 16 }}>Out-of-stock trend</h3>
         {trend.length < 2 ? (
-          <p style={{ color: "#888", fontSize: 14 }}>Upload at least two snapshots to see how stockouts are trending.</p>
+          <p style={{ color: "#9aa3ad", fontSize: 14 }}>Upload at least two snapshots to see how stockouts are trending.</p>
         ) : (
           <TrendLine data={trend} />
         )}
@@ -425,19 +461,19 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
 
       {/* Top movers */}
       <div style={{ ...card, marginTop: 20 }}>
-        <h3 style={{ marginTop: 0, fontSize: 16 }}>Top movers <span style={{ color: "#888", fontWeight: 400, fontSize: 13 }}>— fastest sellers, keep these stocked</span></h3>
+        <h3 style={{ marginTop: 0, fontSize: 16 }}>Top movers <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— fastest sellers, keep these stocked</span></h3>
         {topMovers.length === 0 ? (
-          <p style={{ color: "#888", fontSize: 14 }}>Not enough history yet to measure how fast items sell. Upload another snapshot or two.</p>
+          <p style={{ color: "#9aa3ad", fontSize: 14 }}>Not enough history yet to measure how fast items sell. Upload another snapshot or two.</p>
         ) : (
           <div>
             {topMovers.map((i) => (
               <div key={i.item + i.vendor} style={{ marginBottom: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 }}>
-                  <span>{i.item} <span style={{ color: "#999" }}>· {i.vendor}</span></span>
-                  <span style={{ color: "#555" }}>{(i.consumptionPerWeek || 0).toFixed(1)} / wk{i.weeksOfStock !== null ? ` · ${i.weeksOfStock.toFixed(1)} wks left` : ""}</span>
+                  <span>{i.item} <span style={{ color: "#8b94a0" }}>· {i.vendor}</span></span>
+                  <span style={{ color: "#aab2bd" }}>{(i.consumptionPerWeek || 0).toFixed(1)} / wk{i.weeksOfStock !== null ? ` · ${i.weeksOfStock.toFixed(1)} wks left` : ""}</span>
                 </div>
-                <div style={{ background: "#e2d2ac", borderRadius: 4, height: 8 }}>
-                  <div style={{ width: `${Math.max(3, ((i.consumptionPerWeek || 0) / maxMover) * 100)}%`, background: RED, height: 8, borderRadius: 4 }} />
+                <div style={{ background: "#2a2f37", borderRadius: 4, height: 8 }}>
+                  <div style={{ width: `${Math.max(3, ((i.consumptionPerWeek || 0) / maxMover) * 100)}%`, background: ACCENT, height: 8, borderRadius: 4 }} />
                 </div>
               </div>
             ))}
@@ -447,9 +483,9 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
 
       {/* Reorder by vendor */}
       <div style={{ ...card, marginTop: 20 }}>
-        <h3 style={{ marginTop: 0, fontSize: 16 }}>Reorder by vendor <span style={{ color: "#888", fontWeight: 400, fontSize: 13 }}>— batch into one PO each</span></h3>
+        <h3 style={{ marginTop: 0, fontSize: 16 }}>Reorder by vendor <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— batch into one PO each</span></h3>
         {vendorReorder.length === 0 ? (
-          <p style={{ color: "#888", fontSize: 14 }}>Nothing needs reordering right now.</p>
+          <p style={{ color: "#9aa3ad", fontSize: 14 }}>Nothing needs reordering right now.</p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
@@ -473,7 +509,7 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
       {/* Dead stock */}
       {deadStock.length > 0 && (
         <div style={{ ...card, marginTop: 20 }}>
-          <h3 style={{ marginTop: 0, fontSize: 16 }}>Dead stock <span style={{ color: "#888", fontWeight: 400, fontSize: 13 }}>— in stock but not selling, consider not reordering</span></h3>
+          <h3 style={{ marginTop: 0, fontSize: 16 }}>Dead stock <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— in stock but not selling, consider not reordering</span></h3>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
               <th style={th}>Vendor</th><th style={th}>Item</th>
@@ -489,7 +525,7 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
               ))}
             </tbody>
           </table>
-          {deadStock.length > 12 && <p style={{ color: "#888", fontSize: 13, margin: "10px 0 0" }}>+ {deadStock.length - 12} more.</p>}
+          {deadStock.length > 12 && <p style={{ color: "#9aa3ad", fontSize: 13, margin: "10px 0 0" }}>+ {deadStock.length - 12} more.</p>}
         </div>
       )}
     </div>
@@ -498,10 +534,10 @@ function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: 
 
 function Kpi({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: string }) {
   return (
-    <div style={{ ...statCard, background: "#f3e9d2" }}>
-      <div style={{ color: "#7a5c3a", fontSize: 13 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: accent || "#3a2a1a" }}>{value}</div>
-      <div style={{ color: "#9b8463", fontSize: 12 }}>{sub}</div>
+    <div style={{ ...statCard, background: "#232932" }}>
+      <div style={{ color: "#aab2bd", fontSize: 13 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: accent || "#e6e8eb" }}>{value}</div>
+      <div style={{ color: "#7d8794", fontSize: 12 }}>{sub}</div>
     </div>
   );
 }
@@ -515,14 +551,14 @@ function TrendLine({ data }: { data: SnapshotStat[] }) {
   const pts = data.map((d, i) => `${x(i)},${y(d.outOfStock)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Out-of-stock count over time">
-      <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#e2e8f0" />
-      <text x={4} y={y(max) + 4} fontSize={11} fill="#999">{max}</text>
-      <text x={4} y={H - padY + 4} fontSize={11} fill="#999">0</text>
+      <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#333a44" />
+      <text x={4} y={y(max) + 4} fontSize={11} fill="#8b94a0">{max}</text>
+      <text x={4} y={H - padY + 4} fontSize={11} fill="#8b94a0">0</text>
       <polyline points={pts} fill="none" stroke="#E24B4A" strokeWidth={2.5} />
       {data.map((d, i) => (
         <g key={d.date}>
           <circle cx={x(i)} cy={y(d.outOfStock)} r={3.5} fill="#E24B4A" />
-          <text x={x(i)} y={H - 4} fontSize={11} fill="#888" textAnchor="middle">{d.date.slice(5)}</text>
+          <text x={x(i)} y={H - 4} fontSize={11} fill="#9aa3ad" textAnchor="middle">{d.date.slice(5)}</text>
         </g>
       ))}
       <text x={x(data.length - 1)} y={y(data[data.length - 1].outOfStock) - 8} fontSize={12} fill="#E24B4A" textAnchor="end" fontWeight={600}>
@@ -534,7 +570,7 @@ function TrendLine({ data }: { data: SnapshotStat[] }) {
 
 // Tiny per-item trend line for table cells.
 function Sparkline({ history }: { history: { qoh: number }[] }) {
-  if (history.length < 2) return <span style={{ color: "#ccc", fontSize: 12 }}>—</span>;
+  if (history.length < 2) return <span style={{ color: "#5b6470", fontSize: 12 }}>—</span>;
   const W = 80, H = 20;
   const vals = history.map((h) => h.qoh);
   const max = Math.max(1, ...vals), min = Math.min(...vals);
@@ -545,7 +581,7 @@ function Sparkline({ history }: { history: { qoh: number }[] }) {
   const down = vals[vals.length - 1] < vals[0];
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
-      <polyline points={pts} fill="none" stroke={down ? "#E24B4A" : "#1D9E75"} strokeWidth={1.5} />
+      <polyline points={pts} fill="none" stroke={down ? "#E24B4A" : "#34d399"} strokeWidth={1.5} />
     </svg>
   );
 }
@@ -554,7 +590,7 @@ function Sparkline({ history }: { history: { qoh: number }[] }) {
 
 function ChangesTab({ changes, activeDate, prevDate }: { changes: InventoryChange[]; activeDate: string; prevDate: string | null }) {
   if (!prevDate) {
-    return <div style={{ ...card, marginTop: 20, color: "#666" }}>This is your earliest snapshot. Upload another day&apos;s file to see what sold and what arrived.</div>;
+    return <div style={{ ...card, marginTop: 20, color: "#aab2bd" }}>This is your earliest snapshot. Upload another day&apos;s file to see what sold and what arrived.</div>;
   }
   const sold = changes.filter((c) => c.delta < 0).sort((a, b) => a.delta - b.delta);
   const received = changes.filter((c) => c.delta > 0).sort((a, b) => b.delta - a.delta);
@@ -563,17 +599,17 @@ function ChangesTab({ changes, activeDate, prevDate }: { changes: InventoryChang
 
   return (
     <div style={{ marginTop: 20 }}>
-      <p style={{ color: "#666", fontSize: 14, marginTop: 0 }}>
+      <p style={{ color: "#aab2bd", fontSize: 14, marginTop: 0 }}>
         Change from <strong>{prevDate}</strong> to <strong>{activeDate}</strong>. Drops are sales; rises are stock arriving.
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
         <Kpi label="Units sold" value={unitsSold.toLocaleString()} sub={`${sold.length} products`} accent="#E24B4A" />
-        <Kpi label="Units received" value={unitsReceived.toLocaleString()} sub={`${received.length} products`} accent="#1D9E75" />
+        <Kpi label="Units received" value={unitsReceived.toLocaleString()} sub={`${received.length} products`} accent="#34d399" />
         <Kpi label="Net change" value={(unitsReceived - unitsSold).toLocaleString()} sub="received − sold" />
       </div>
 
       <ChangeTable title="Sold — inventory down" color="#E24B4A" rows={sold} />
-      <ChangeTable title="Received — inventory up" color="#1D9E75" rows={received} />
+      <ChangeTable title="Received — inventory up" color="#34d399" rows={received} />
     </div>
   );
 }
@@ -582,7 +618,7 @@ function ChangeTable({ title, color, rows }: { title: string; color: string; row
   return (
     <div style={{ ...card, marginTop: 20 }}>
       <h3 style={{ marginTop: 0, color, fontSize: 16 }}>{title} — {rows.length} items</h3>
-      {rows.length === 0 ? <p style={{ color: "#888", fontSize: 14 }}>Nothing here for this day.</p> : (
+      {rows.length === 0 ? <p style={{ color: "#9aa3ad", fontSize: 14 }}>Nothing here for this day.</p> : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
@@ -596,7 +632,7 @@ function ChangeTable({ title, color, rows }: { title: string; color: string; row
                 <tr key={c.item + c.vendor} style={{ borderBottom: "1px solid #f0f0f0" }}>
                   <td style={td}>{c.vendor}</td>
                   <td style={td}>{c.item}</td>
-                  <td style={{ ...td, textAlign: "center", color: "#999" }}>{c.prevQoh}</td>
+                  <td style={{ ...td, textAlign: "center", color: "#8b94a0" }}>{c.prevQoh}</td>
                   <td style={{ ...td, textAlign: "center" }}>{c.qoh}</td>
                   <td style={{ ...td, textAlign: "center", fontWeight: 600, color }}>{c.delta > 0 ? `+${c.delta}` : c.delta}</td>
                 </tr>
@@ -625,17 +661,17 @@ function MoneyTrend({ data }: { data: { date: string; revenue: number }[] }) {
   const last = data[data.length - 1];
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Revenue per snapshot over time">
-      <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#d8c6a0" />
-      <text x={4} y={y(max) + 4} fontSize={11} fill="#9b8463">{money(max)}</text>
-      <text x={4} y={H - padY + 4} fontSize={11} fill="#9b8463">$0</text>
-      <polyline points={pts} fill="none" stroke="#1d7a55" strokeWidth={2.5} />
+      <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#333a44" />
+      <text x={4} y={y(max) + 4} fontSize={11} fill="#7d8794">{money(max)}</text>
+      <text x={4} y={H - padY + 4} fontSize={11} fill="#7d8794">$0</text>
+      <polyline points={pts} fill="none" stroke="#34d399" strokeWidth={2.5} />
       {data.map((d, i) => (
         <g key={d.date}>
-          <circle cx={x(i)} cy={y(d.revenue)} r={3.5} fill="#1d7a55" />
-          <text x={x(i)} y={H - 4} fontSize={11} fill="#9b8463" textAnchor="middle">{d.date.slice(5)}</text>
+          <circle cx={x(i)} cy={y(d.revenue)} r={3.5} fill="#34d399" />
+          <text x={x(i)} y={H - 4} fontSize={11} fill="#7d8794" textAnchor="middle">{d.date.slice(5)}</text>
         </g>
       ))}
-      <text x={x(data.length - 1)} y={y(last.revenue) - 8} fontSize={12} fill="#1d7a55" textAnchor="end" fontWeight={600}>{money(last.revenue)}</text>
+      <text x={x(data.length - 1)} y={y(last.revenue) - 8} fontSize={12} fill="#34d399" textAnchor="end" fontWeight={600}>{money(last.revenue)}</text>
     </svg>
   );
 }
@@ -679,33 +715,33 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
 
       {prevDate ? (
         <>
-          <p style={{ color: "#666", fontSize: 14, margin: "12px 0 0" }}>Sales since the previous snapshot ({prevDate}):</p>
+          <p style={{ color: "#aab2bd", fontSize: 14, margin: "12px 0 0" }}>Sales since the previous snapshot ({prevDate}):</p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 8 }}>
-            <Kpi label="Revenue" value={money(revenue)} sub="units sold × price" accent="#1D9E75" />
+            <Kpi label="Revenue" value={money(revenue)} sub="units sold × price" accent="#34d399" />
             <Kpi label="Gross profit" value={money(grossProfit)} sub="revenue − cost of goods" />
             <Kpi label="Margin" value={`${margin.toFixed(1)}%`} sub="profit ÷ revenue" />
             <Kpi label="Restock spend" value={money(restockCost)} sub="cost of stock received" />
           </div>
         </>
       ) : (
-        <div style={{ ...card, marginTop: 12, color: "#666" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
+        <div style={{ ...card, marginTop: 12, color: "#aab2bd" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
       )}
 
       {revenueSeries.length >= 1 && (
         <div style={{ ...card, marginTop: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
             <h3 style={{ marginTop: 0, marginBottom: 0, fontSize: 16 }}>Revenue over time</h3>
-            <span style={{ color: "#7a5c3a", fontSize: 13 }}>All snapshots total: <strong style={{ color: "#1d7a55" }}>{money(totalRevenue)}</strong></span>
+            <span style={{ color: "#aab2bd", fontSize: 13 }}>All snapshots total: <strong style={{ color: "#34d399" }}>{money(totalRevenue)}</strong></span>
           </div>
           {revenueSeries.length < 2 ? (
-            <p style={{ color: "#888", fontSize: 14, marginBottom: 0 }}>One day of sales so far. Upload more snapshots to chart the trend.</p>
+            <p style={{ color: "#9aa3ad", fontSize: 14, marginBottom: 0 }}>One day of sales so far. Upload more snapshots to chart the trend.</p>
           ) : (
             <div style={{ marginTop: 12 }}><MoneyTrend data={revenueSeries} /></div>
           )}
         </div>
       )}
 
-      <p style={{ color: "#666", fontSize: 14, margin: "20px 0 0" }}>Current inventory value:</p>
+      <p style={{ color: "#aab2bd", fontSize: 14, margin: "20px 0 0" }}>Current inventory value:</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 8 }}>
         <Kpi label="Value at cost" value={money(invCost)} sub="what it cost you" />
         <Kpi label="Retail value" value={money(invRetail)} sub="if it all sells" />
@@ -714,9 +750,9 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
 
       {prevDate && (
         <div style={{ ...card, marginTop: 20 }}>
-          <h3 style={{ marginTop: 0, fontSize: 16 }}>Top sellers this period <span style={{ color: "#888", fontWeight: 400, fontSize: 13 }}>— by revenue</span></h3>
+          <h3 style={{ marginTop: 0, fontSize: 16 }}>Top sellers this period <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— by revenue</span></h3>
           {topSellers.length === 0 ? (
-            <p style={{ color: "#888", fontSize: 14 }}>No sales recorded, or no prices set yet.</p>
+            <p style={{ color: "#9aa3ad", fontSize: 14 }}>No sales recorded, or no prices set yet.</p>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
@@ -776,7 +812,7 @@ function ProductPricing({ items, productMap, onSave }: {
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>Product pricing</h2>
-      <p style={{ color: "#666", fontSize: 14 }}>Enter what each product costs you and what you sell it for. These save automatically and power the Revenue tab. Search to find items quickly.</p>
+      <p style={{ color: "#aab2bd", fontSize: 14 }}>Enter what each product costs you and what you sell it for. These save automatically and power the Revenue tab. Search to find items quickly.</p>
       <input
         type="text" placeholder="Search products…" value={filter}
         onChange={(e) => setFilter(e.target.value)} style={{ ...input, width: "100%", maxWidth: 320, marginBottom: 12 }}
@@ -793,7 +829,7 @@ function ProductPricing({ items, productMap, onSave }: {
             {shown.map((r) => (
               <tr key={r.item} style={{ borderBottom: "1px solid #f0f0f0" }}>
                 <td style={td}>{r.item}</td>
-                <td style={{ ...td, color: "#888" }}>{r.vendor}</td>
+                <td style={{ ...td, color: "#9aa3ad" }}>{r.vendor}</td>
                 <td style={{ ...td, textAlign: "center" }}>
                   <input type="number" min={0} step={0.01} value={val(r.item, "cost")}
                     onChange={(e) => onEdit(r.item, "cost", e.target.value)} onBlur={() => commit(r.item)}
@@ -804,16 +840,97 @@ function ProductPricing({ items, productMap, onSave }: {
                     onChange={(e) => onEdit(r.item, "price", e.target.value)} onBlur={() => commit(r.item)}
                     style={{ ...input, width: 80 }} />
                 </td>
-                <td style={{ ...td, color: "#1D9E75" }}>{savedItem === r.item ? "✓" : ""}</td>
+                <td style={{ ...td, color: "#34d399" }}>{savedItem === r.item ? "✓" : ""}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {filtered.length > shown.length && (
-        <p style={{ color: "#888", fontSize: 13, marginBottom: 0 }}>Showing first {shown.length} of {filtered.length}. Type in the search box to narrow down.</p>
+        <p style={{ color: "#9aa3ad", fontSize: 13, marginBottom: 0 }}>Showing first {shown.length} of {filtered.length}. Type in the search box to narrow down.</p>
       )}
-      {items.length === 0 && <p style={{ color: "#888", fontSize: 14 }}>Upload an inventory file first — your products will appear here.</p>}
+      {items.length === 0 && <p style={{ color: "#9aa3ad", fontSize: 14 }}>Upload an inventory file first — your products will appear here.</p>}
+    </div>
+  );
+}
+
+// ---- Snapshot calendar picker ---------------------------------------------
+
+function SnapshotCalendar({ importedDates, activeDate, onPick }: { importedDates: string[]; activeDate: string; onPick: (d: string) => void }) {
+  const have = useMemo(() => new Set(importedDates), [importedDates]);
+  const [open, setOpen] = useState(false);
+  const base = activeDate || importedDates[importedDates.length - 1] || "";
+  const [ym, setYm] = useState(() => {
+    if (base) { const [y, m] = base.split("-").map(Number); return { y, m }; }
+    const now = new Date(); return { y: now.getFullYear(), m: now.getMonth() + 1 };
+  });
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const monthName = new Date(ym.y, ym.m - 1, 1).toLocaleString("en-US", { month: "long" });
+  const daysInMonth = new Date(ym.y, ym.m, 0).getDate();
+  const firstDow = new Date(ym.y, ym.m - 1, 1).getDay();
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  const prevMonth = () => setYm(({ y, m }) => (m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 }));
+  const nextMonth = () => setYm(({ y, m }) => (m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 }));
+  const monthUploads = importedDates.filter((d) => d.startsWith(`${ym.y}-${pad(ym.m)}`)).length;
+
+  const dayBtn: React.CSSProperties = { aspectRatio: "1", border: "none", borderRadius: 6, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" };
+
+  return (
+    <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
+      <label style={{ fontSize: 14, color: "#aab2bd" }}>Snapshot:</label>
+      <button onClick={() => setOpen((o) => !o)} style={{ ...input, cursor: "pointer", minWidth: 150, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span>{activeDate || "Pick a date"}</span>
+        <span style={{ color: "#7d8794", fontSize: 11 }}>▾</span>
+      </button>
+
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41, background: "#1e232b", border: "1px solid #333a44", borderRadius: 10, padding: 12, width: 280, boxShadow: "0 8px 24px rgba(0,0,0,.5)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <button onClick={prevMonth} style={{ ...btnGhost, padding: "2px 10px" }}>‹</button>
+              <strong style={{ fontSize: 14 }}>{monthName} {ym.y}</strong>
+              <button onClick={nextMonth} style={{ ...btnGhost, padding: "2px 10px" }}>›</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 3 }}>
+              {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+                <div key={i} style={{ textAlign: "center", fontSize: 11, color: "#7d8794" }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+              {cells.map((d, i) => {
+                if (d === null) return <div key={i} />;
+                const ds = `${ym.y}-${pad(ym.m)}-${pad(d)}`;
+                const hasUpload = have.has(ds);
+                const isActive = ds === activeDate;
+                return (
+                  <button
+                    key={i}
+                    disabled={!hasUpload}
+                    onClick={() => { onPick(ds); setOpen(false); }}
+                    title={hasUpload ? `View ${ds}` : "No report uploaded"}
+                    style={{
+                      ...dayBtn,
+                      cursor: hasUpload ? "pointer" : "default",
+                      background: isActive ? ACCENT : hasUpload ? "rgba(91,155,255,.18)" : "transparent",
+                      color: isActive ? "#0b1220" : hasUpload ? "#cfe0ff" : "#4b535e",
+                      fontWeight: hasUpload ? 600 : 400,
+                    }}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: "#7d8794", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: "rgba(91,155,255,.5)", marginRight: 5 }} />has a report</span>
+              <span>{monthUploads} this month</span>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -825,7 +942,7 @@ function VendorSettings({ vendors, onChange }: { vendors: VendorRow[]; onChange:
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>Vendor settings</h2>
-      <p style={{ color: "#666", fontSize: 14 }}>Exclude vendors you don&apos;t reorder here, and set how many days each takes to deliver (drives the &quot;order now&quot; timing).</p>
+      <p style={{ color: "#aab2bd", fontSize: 14 }}>Exclude vendors you don&apos;t reorder here, and set how many days each takes to deliver (drives the &quot;order now&quot; timing).</p>
       <div style={{ maxHeight: 320, overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #eee" }}>
@@ -850,15 +967,15 @@ function VendorSettings({ vendors, onChange }: { vendors: VendorRow[]; onChange:
   );
 }
 
-// Old-western palette: barn red accent, leather/parchment surfaces, espresso ink.
-const RED = "#9b2226";
-const dropZone: React.CSSProperties = { border: "2px dashed #b08d57", borderRadius: 8, padding: "48px 20px", textAlign: "center", marginTop: 24, transition: "all .15s" };
-const card: React.CSSProperties = { background: "#fbf6ea", borderRadius: 8, padding: 24, marginTop: 24, border: "1px solid #d8c6a0", boxShadow: "0 1px 2px rgba(80,50,20,.08)" };
-const statCard: React.CSSProperties = { background: "#fbf6ea", borderRadius: 8, padding: 16, border: "1px solid #d8c6a0", boxShadow: "0 1px 2px rgba(80,50,20,.08)" };
-const btnPrimary: React.CSSProperties = { background: RED, color: "#fff", border: "none", borderRadius: 6, padding: "10px 18px", fontSize: 14, cursor: "pointer", display: "inline-block" };
-const btnGhost: React.CSSProperties = { background: "#fbf6ea", color: RED, border: "1px solid #c2a878", borderRadius: 6, padding: "9px 16px", fontSize: 14, cursor: "pointer" };
-const input: React.CSSProperties = { border: "1px solid #c2a878", borderRadius: 6, padding: "7px 10px", fontSize: 14, background: "#fffdf7", color: "#3a2a1a" };
-const th: React.CSSProperties = { padding: "8px 10px", fontWeight: 600, color: "#6b4a2b" };
+// Dark interface palette.
+const ACCENT = "#5b9bff";
+const dropZone: React.CSSProperties = { border: "2px dashed #3a414c", borderRadius: 8, padding: "48px 20px", textAlign: "center", marginTop: 24, transition: "all .15s" };
+const card: React.CSSProperties = { background: "#1e232b", borderRadius: 10, padding: 24, marginTop: 24, border: "1px solid #333a44", boxShadow: "0 1px 3px rgba(0,0,0,.3)" };
+const statCard: React.CSSProperties = { background: "#232932", borderRadius: 10, padding: 16, border: "1px solid #333a44", boxShadow: "0 1px 3px rgba(0,0,0,.3)" };
+const btnPrimary: React.CSSProperties = { background: ACCENT, color: "#0b1220", border: "none", borderRadius: 6, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-block" };
+const btnGhost: React.CSSProperties = { background: "#232932", color: ACCENT, border: "1px solid #3a414c", borderRadius: 6, padding: "9px 16px", fontSize: 14, cursor: "pointer" };
+const input: React.CSSProperties = { border: "1px solid #3a414c", borderRadius: 6, padding: "7px 10px", fontSize: 14, background: "#14181e", color: "#e6e8eb" };
+const th: React.CSSProperties = { padding: "8px 10px", fontWeight: 600, color: "#aab2bd" };
 const td: React.CSSProperties = { padding: "8px 10px" };
-const errBox: React.CSSProperties = { background: "#f7dcd6", color: "#7a1b1e", padding: "12px 16px", borderRadius: 8, marginTop: 16, fontSize: 14 };
-const warnBox: React.CSSProperties = { background: "#f3e7cc", color: "#7a4a12", padding: "12px 16px", borderRadius: 8, marginTop: 12, fontSize: 14, border: "1px solid #d8c6a0" };
+const errBox: React.CSSProperties = { background: "#3a1d1d", color: "#f0a3a3", padding: "12px 16px", borderRadius: 8, marginTop: 16, fontSize: 14, border: "1px solid #5a2a2a" };
+const warnBox: React.CSSProperties = { background: "#2e2a1a", color: "#e6c97a", padding: "12px 16px", borderRadius: 8, marginTop: 12, fontSize: 14, border: "1px solid #4a4226" };

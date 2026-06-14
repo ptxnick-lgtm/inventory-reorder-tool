@@ -9,16 +9,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Rye&family=Special+Elite&display=swap"
-          rel="stylesheet"
-        />
         <style>{`
-          h1.western { font-family: 'Rye', 'Special Elite', serif; font-weight: 400; letter-spacing: .5px; }
-          h2, h3 { font-family: 'Special Elite', Georgia, serif; }
-          body { background-image: repeating-linear-gradient(0deg, rgba(120,72,40,.03) 0 1px, transparent 1px 28px); }
+          html { color-scheme: dark; }
+          ::selection { background: #5b9bff; color: #0b1220; }
+          input::placeholder { color: #6b7480; }
+          input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
         `}</style>
       </head>
       <body
@@ -26,8 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           margin: 0,
           fontFamily:
             "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-          background: "#e8dcc0",
-          color: "#3a2a1a",
+          background: "#0f1217",
+          color: "#e6e8eb",
         }}
       >
         {children}
