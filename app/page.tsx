@@ -72,14 +72,19 @@ export default function Page() {
     products.forEach((p) => m.set(p.item, p));
     return m;
   }, [products]);
-  // Revenue earned between each pair of consecutive snapshots (units sold × price).
+  // Revenue and profit earned between each pair of consecutive snapshots.
   const revenueSeries = useMemo(() => {
-    const out: { date: string; revenue: number }[] = [];
+    const out: { date: string; revenue: number; profit: number }[] = [];
     for (let i = 1; i < importedDates.length; i++) {
       const ch = inventoryChanges(allSnapshots, importedDates[i], importedDates[i - 1], excludedNames);
-      let rev = 0;
-      for (const c of ch) if (c.delta < 0) rev += -c.delta * (productMap.get(c.item)?.price || 0);
-      out.push({ date: importedDates[i], revenue: rev });
+      let rev = 0, profit = 0;
+      for (const c of ch) if (c.delta < 0) {
+        const p = productMap.get(c.item);
+        const units = -c.delta;
+        rev += units * (p?.price || 0);
+        profit += units * ((p?.price || 0) - (p?.cost || 0));
+      }
+      out.push({ date: importedDates[i], revenue: rev, profit });
     }
     return out;
   }, [allSnapshots, importedDates, excludedNames, productMap]);
@@ -335,7 +340,7 @@ interface DashboardProps {
   trend: SnapshotStat[];
   changes: InventoryChange[];
   productMap: Map<string, ProductRow>;
-  revenueSeries: { date: string; revenue: number }[];
+  revenueSeries: { date: string; revenue: number; profit: number }[];
   activeDate: string;
   prevDate: string | null;
   importedDates: string[];
@@ -710,33 +715,98 @@ function money(n: number): string {
   return "$" + Math.round(n).toLocaleString();
 }
 
-// Inline SVG revenue-over-time line chart (no chart library).
-function MoneyTrend({ data }: { data: { date: string; revenue: number }[] }) {
-  const W = 600, H = 190, padX = 48, padY = 20;
-  const max = Math.max(1, ...data.map((d) => d.revenue));
-  const x = (i: number) => padX + (i * (W - padX * 2)) / Math.max(1, data.length - 1);
-  const y = (v: number) => H - padY - (v / max) * (H - padY * 2);
-  const pts = data.map((d, i) => `${x(i)},${y(d.revenue)}`).join(" ");
-  const last = data[data.length - 1];
+function nDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+type RevPoint = { date: string; revenue: number; profit: number };
+
+// Revenue-over-time card with a timeframe dropdown.
+function RevenueOverTime({ series }: { series: RevPoint[] }) {
+  const [tf, setTf] = useState("all");
+  const TFS: [string, string][] = [["all", "All time"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"]];
+  const days = tf === "all" ? 0 : parseInt(tf, 10);
+  const cutoff = days > 0 ? nDaysAgo(days) : null;
+  const data = cutoff ? series.filter((s) => s.date >= cutoff) : series;
+  const totalRev = data.reduce((s, r) => s + r.revenue, 0);
+  const totalProfit = data.reduce((s, r) => s + r.profit, 0);
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Revenue per snapshot over time">
-      <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#333a44" />
-      <text x={4} y={y(max) + 4} fontSize={11} fill="#7d8794">{money(max)}</text>
-      <text x={4} y={H - padY + 4} fontSize={11} fill="#7d8794">$0</text>
-      <polyline points={pts} fill="none" stroke="#34d399" strokeWidth={2.5} />
-      {data.map((d, i) => (
-        <g key={d.date}>
-          <circle cx={x(i)} cy={y(d.revenue)} r={3.5} fill="#34d399" />
-          <text x={x(i)} y={H - 4} fontSize={11} fill="#7d8794" textAnchor="middle">{d.date.slice(5)}</text>
-        </g>
-      ))}
-      <text x={x(data.length - 1)} y={y(last.revenue) - 8} fontSize={12} fill="#34d399" textAnchor="end" fontWeight={600}>{money(last.revenue)}</text>
-    </svg>
+    <div style={{ ...card, marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ marginTop: 0, marginBottom: 0, fontSize: 16 }}>Revenue over time</h3>
+        <select value={tf} onChange={(e) => setTf(e.target.value)} style={{ ...input, padding: "5px 8px" }}>
+          {TFS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        </select>
+      </div>
+      <div style={{ display: "flex", gap: 18, margin: "8px 0 4px", fontSize: 13, color: "#aab2bd" }}>
+        <span>Revenue <strong style={{ color: "#34d399" }}>{money(totalRev)}</strong></span>
+        <span>Profit <strong style={{ color: "#5b9bff" }}>{money(totalProfit)}</strong></span>
+      </div>
+      {data.length < 2 ? (
+        <p style={{ color: "#9aa3ad", fontSize: 14, marginBottom: 0 }}>Not enough data in this range yet — pick a wider timeframe or upload more snapshots.</p>
+      ) : (
+        <MoneyTrend data={data} />
+      )}
+    </div>
   );
 }
 
-function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }: { classified: ClassifiedItem[]; changes: InventoryChange[]; productMap: Map<string, ProductRow>; revenueSeries: { date: string; revenue: number }[]; prevDate: string | null }) {
-  const totalRevenue = revenueSeries.reduce((s, r) => s + r.revenue, 0);
+// Inline SVG revenue + profit chart with hover tooltips (no chart library).
+function MoneyTrend({ data }: { data: RevPoint[] }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 600, H = 210, padX = 52, padY = 24, bottom = H - padY;
+  const maxV = Math.max(1, ...data.map((d) => Math.max(d.revenue, d.profit, 0)));
+  const x = (i: number) => padX + (i * (W - padX * 2)) / Math.max(1, data.length - 1);
+  const y = (v: number) => bottom - (Math.max(0, v) / maxV) * (bottom - padY);
+  const revPts = data.map((d, i) => `${x(i)},${y(d.revenue)}`).join(" ");
+  const proPts = data.map((d, i) => `${x(i)},${y(d.profit)}`).join(" ");
+  const colW = (W - padX * 2) / Math.max(1, data.length - 1);
+  const labelEvery = Math.ceil(data.length / 8);
+  const h = hover !== null ? data[hover] : null;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#aab2bd", margin: "4px 0 6px" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 2, background: "#34d399", display: "inline-block" }} />Revenue</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 0, borderTop: "2px dashed #5b9bff", display: "inline-block" }} />Profit</span>
+      </div>
+      <div style={{ position: "relative" }} onMouseLeave={() => setHover(null)}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Revenue and profit per snapshot over time">
+          <line x1={padX} y1={bottom} x2={W - padX} y2={bottom} stroke="#333a44" />
+          <text x={4} y={y(maxV) + 4} fontSize={11} fill="#7d8794">{money(maxV)}</text>
+          <text x={4} y={bottom + 4} fontSize={11} fill="#7d8794">$0</text>
+          {h && <line x1={x(hover!)} y1={padY - 6} x2={x(hover!)} y2={bottom} stroke="#5b6470" strokeDasharray="3 3" />}
+          <polyline points={proPts} fill="none" stroke="#5b9bff" strokeWidth={2} strokeDasharray="5 4" />
+          <polyline points={revPts} fill="none" stroke="#34d399" strokeWidth={2.5} />
+          {data.map((d, i) => (
+            <g key={d.date}>
+              <circle cx={x(i)} cy={y(d.profit)} r={hover === i ? 4 : 2.5} fill="#5b9bff" />
+              <circle cx={x(i)} cy={y(d.revenue)} r={hover === i ? 4.5 : 3} fill="#34d399" />
+              {i % labelEvery === 0 && <text x={x(i)} y={H - 4} fontSize={11} fill="#7d8794" textAnchor="middle">{d.date.slice(5)}</text>}
+              <rect x={x(i) - colW / 2} y={0} width={colW} height={bottom} fill="transparent" onMouseEnter={() => setHover(i)} />
+            </g>
+          ))}
+        </svg>
+        {h && (
+          <div style={{
+            position: "absolute", left: `${(x(hover!) / W) * 100}%`, top: `${(y(h.revenue) / H) * 100}%`,
+            transform: "translate(-50%, calc(-100% - 10px))", background: "#0f1217", border: "1px solid #3a414c",
+            borderRadius: 8, padding: "8px 10px", pointerEvents: "none", whiteSpace: "nowrap", fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.5)",
+          }}>
+            <div style={{ color: "#e6e8eb", fontWeight: 600, marginBottom: 3 }}>{h.date}</div>
+            <div style={{ color: "#34d399" }}>Revenue {money(h.revenue)}</div>
+            <div style={{ color: "#5b9bff" }}>Profit {money(h.profit)}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }: { classified: ClassifiedItem[]; changes: InventoryChange[]; productMap: Map<string, ProductRow>; revenueSeries: RevPoint[]; prevDate: string | null }) {
   let revenue = 0, cogs = 0, restockCost = 0;
   const sellers: { item: string; vendor: string; units: number; revenue: number }[] = [];
   for (const c of changes) {
@@ -786,19 +856,7 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
         <div style={{ ...card, marginTop: 12, color: "#aab2bd" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
       )}
 
-      {revenueSeries.length >= 1 && (
-        <div style={{ ...card, marginTop: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-            <h3 style={{ marginTop: 0, marginBottom: 0, fontSize: 16 }}>Revenue over time</h3>
-            <span style={{ color: "#aab2bd", fontSize: 13 }}>All snapshots total: <strong style={{ color: "#34d399" }}>{money(totalRevenue)}</strong></span>
-          </div>
-          {revenueSeries.length < 2 ? (
-            <p style={{ color: "#9aa3ad", fontSize: 14, marginBottom: 0 }}>One day of sales so far. Upload more snapshots to chart the trend.</p>
-          ) : (
-            <div style={{ marginTop: 12 }}><MoneyTrend data={revenueSeries} /></div>
-          )}
-        </div>
-      )}
+      {revenueSeries.length >= 1 && <RevenueOverTime series={revenueSeries} />}
 
       <p style={{ color: "#aab2bd", fontSize: 14, margin: "20px 0 0" }}>Current inventory value:</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 8 }}>
