@@ -16,6 +16,10 @@ next-env.d.ts
 .DS_Store
 *.pem
 
+# private inventory data — never commit real business data to the repo
+/mom-inventory.pdf
+/Inventory_*.csv
+
 # debug logs
 npm-debug.log*
 yarn-debug.log*
