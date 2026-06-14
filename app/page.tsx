@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { parseCSVText, parseXLSX, parsePricingCSV, ParseResult } from "@/lib/parser";
-import { classify, snapshotTrend, inventoryChanges, ClassifiedItem, SnapshotStat, InventoryChange, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
+import { classify, inventoryChanges, ClassifiedItem, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
 import {
   fetchVendors, fetchAllSnapshots, insertSnapshot, fetchImportedDates,
   updateVendor, addVendor, fetchProducts, upsertProduct, upsertProducts, deleteSnapshot, VendorRow, ProductRow,
@@ -75,15 +75,6 @@ export default function Page() {
   }
 
   const excludedNames = useMemo(() => vendors.filter((v) => v.excluded).map((v) => v.name), [vendors]);
-  const trend = useMemo(() => snapshotTrend(allSnapshots, excludedNames), [allSnapshots, excludedNames]);
-  const prevDate = useMemo(() => {
-    const i = importedDates.indexOf(activeDate);
-    return i > 0 ? importedDates[i - 1] : null;
-  }, [importedDates, activeDate]);
-  const changes = useMemo(
-    () => inventoryChanges(allSnapshots, activeDate, prevDate, excludedNames),
-    [allSnapshots, activeDate, prevDate, excludedNames]
-  );
   const productMap = useMemo(() => {
     const m = new Map<string, ProductRow>();
     products.forEach((p) => m.set(p.item, p));
@@ -289,12 +280,9 @@ export default function Page() {
       {classified && stage !== "review" && stage !== "saving" && (
         <Dashboard
           classified={classified}
-          trend={trend}
-          changes={changes}
           productMap={productMap}
           periodSales={periodSales}
           activeDate={activeDate}
-          prevDate={prevDate}
           importedDates={importedDates}
           onPickDate={async (d) => { setActiveDate(d); await runClassify(d, vendors); }}
           tierCounts={tierCounts}
@@ -360,12 +348,9 @@ function PasswordGate({ children }: { children: React.ReactNode }) {
 
 interface DashboardProps {
   classified: ClassifiedItem[];
-  trend: SnapshotStat[];
-  changes: InventoryChange[];
   productMap: Map<string, ProductRow>;
   periodSales: Period[];
   activeDate: string;
-  prevDate: string | null;
   importedDates: string[];
   onPickDate: (d: string) => void | Promise<void>;
   tierCounts: (t: Tier) => number;
@@ -374,9 +359,9 @@ interface DashboardProps {
   onDeleteSnapshot: (date: string) => void | Promise<void>;
 }
 
-type View = "list" | "changes" | "insights" | "revenue";
+type View = "list" | "revenue";
 
-function Dashboard({ classified, trend, changes, productMap, periodSales, activeDate, prevDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
+function Dashboard({ classified, productMap, periodSales, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -439,7 +424,7 @@ function Dashboard({ classified, trend, changes, productMap, periodSales, active
 
       {/* View tabs */}
       <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #333a44", flexWrap: "wrap" }}>
-        {([["list", "Reorder list"], ["changes", "Daily changes"], ["insights", "Insights"], ["revenue", "Revenue"]] as const).map(([key, label]) => (
+        {([["list", "Reorder list"], ["revenue", "Revenue"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setView(key)}
@@ -469,8 +454,6 @@ function Dashboard({ classified, trend, changes, productMap, periodSales, active
           {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} />}
         </>
       )}
-      {view === "changes" && <ChangesTab changes={changes} activeDate={activeDate} prevDate={prevDate} />}
-      {view === "insights" && <Insights classified={classified} trend={trend} />}
       {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
     </div>
   );
@@ -540,132 +523,6 @@ function TierTable({ items, tier, cart, onToggle, onClear }: {
   );
 }
 
-// ---- Insights tab ---------------------------------------------------------
-
-function Insights({ classified, trend }: { classified: ClassifiedItem[]; trend: SnapshotStat[] }) {
-  const total = classified.length;
-  const outOfStock = classified.filter((i) => i.qoh === 0).length;
-  const newStockouts = classified.filter(
-    (i) => i.qoh === 0 && i.history.length >= 2 && i.history[i.history.length - 2].qoh > 0
-  ).length;
-  const weeklyVelocity = Math.round(classified.reduce((s, i) => s + (i.consumptionPerWeek || 0), 0));
-  const deadStock = classified
-    .filter((i) => i.qoh > 0 && i.consumptionPerWeek === 0)
-    .sort((a, b) => b.qoh - a.qoh);
-  const topMovers = classified
-    .filter((i) => (i.consumptionPerWeek || 0) > 0)
-    .sort((a, b) => (b.consumptionPerWeek || 0) - (a.consumptionPerWeek || 0))
-    .slice(0, 7);
-
-  // Group everything that needs ordering by vendor, so POs can be batched.
-  const byVendor = new Map<string, { count: number; units: number }>();
-  for (const i of classified) {
-    if (i.tier !== "order_now" && i.tier !== "order_soon") continue;
-    const e = byVendor.get(i.vendor) || { count: 0, units: 0 };
-    e.count += 1;
-    e.units += i.suggestedQty || 0;
-    byVendor.set(i.vendor, e);
-  }
-  const vendorReorder = Array.from(byVendor.entries())
-    .map(([vendor, v]) => ({ vendor, ...v }))
-    .sort((a, b) => b.count - a.count);
-
-  const maxMover = topMovers.length ? topMovers[0].consumptionPerWeek || 1 : 1;
-  const pct = total > 0 ? ((outOfStock / total) * 100).toFixed(1) : "0";
-
-  return (
-    <div style={{ marginTop: 20 }}>
-      {/* KPI strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
-        <Kpi label="Out of stock" value={String(outOfStock)} sub={`${pct}% of catalogue`} />
-        <Kpi label="New stockouts" value={String(newStockouts)} sub="since previous snapshot" accent={newStockouts > 0 ? "#E24B4A" : undefined} />
-        <Kpi label="Weekly velocity" value={weeklyVelocity.toLocaleString()} sub="units consumed / week" />
-        <Kpi label="Dead stock" value={String(deadStock.length)} sub="in stock, no movement" />
-      </div>
-
-      {/* Stockout trend */}
-      <div style={{ ...card, marginTop: 20 }}>
-        <h3 style={{ marginTop: 0, fontSize: 16 }}>Out-of-stock trend</h3>
-        {trend.length < 2 ? (
-          <p style={{ color: "#9aa3ad", fontSize: 14 }}>Upload at least two snapshots to see how stockouts are trending.</p>
-        ) : (
-          <TrendLine data={trend} />
-        )}
-      </div>
-
-      {/* Top movers */}
-      <div style={{ ...card, marginTop: 20 }}>
-        <h3 style={{ marginTop: 0, fontSize: 16 }}>Top movers <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— fastest sellers, keep these stocked</span></h3>
-        {topMovers.length === 0 ? (
-          <p style={{ color: "#9aa3ad", fontSize: 14 }}>Not enough history yet to measure how fast items sell. Upload another snapshot or two.</p>
-        ) : (
-          <div>
-            {topMovers.map((i) => (
-              <div key={i.item + i.vendor} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 }}>
-                  <span>{i.item} <span style={{ color: "#8b94a0" }}>· {i.vendor}</span></span>
-                  <span style={{ color: "#aab2bd" }}>{(i.consumptionPerWeek || 0).toFixed(1)} / wk{i.weeksOfStock !== null ? ` · ${i.weeksOfStock.toFixed(1)} wks left` : ""}</span>
-                </div>
-                <div style={{ background: "#2a2f37", borderRadius: 4, height: 8 }}>
-                  <div style={{ width: `${Math.max(3, ((i.consumptionPerWeek || 0) / maxMover) * 100)}%`, background: ACCENT, height: 8, borderRadius: 4 }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Reorder by vendor */}
-      <div style={{ ...card, marginTop: 20 }}>
-        <h3 style={{ marginTop: 0, fontSize: 16 }}>Reorder by vendor <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— batch into one PO each</span></h3>
-        {vendorReorder.length === 0 ? (
-          <p style={{ color: "#9aa3ad", fontSize: 14 }}>Nothing needs reordering right now.</p>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
-              <th style={th}>Vendor</th>
-              <th style={{ ...th, textAlign: "center" }}>Items to order</th>
-              <th style={{ ...th, textAlign: "center" }}>Suggested units</th>
-            </tr></thead>
-            <tbody>
-              {vendorReorder.map((v) => (
-                <tr key={v.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
-                  <td style={td}>{v.vendor}</td>
-                  <td style={{ ...td, textAlign: "center" }}>{v.count}</td>
-                  <td style={{ ...td, textAlign: "center" }}>{v.units > 0 ? `~${v.units}` : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Dead stock */}
-      {deadStock.length > 0 && (
-        <div style={{ ...card, marginTop: 20 }}>
-          <h3 style={{ marginTop: 0, fontSize: 16 }}>Dead stock <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— in stock but not selling, consider not reordering</span></h3>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
-              <th style={th}>Vendor</th><th style={th}>Item</th>
-              <th style={{ ...th, textAlign: "center" }}>On hand</th>
-            </tr></thead>
-            <tbody>
-              {deadStock.slice(0, 12).map((i) => (
-                <tr key={i.item + i.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
-                  <td style={td}>{i.vendor}</td>
-                  <td style={td}>{i.item}</td>
-                  <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {deadStock.length > 12 && <p style={{ color: "#9aa3ad", fontSize: 13, margin: "10px 0 0" }}>+ {deadStock.length - 12} more.</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Kpi({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: string }) {
   return (
     <div style={{ ...statCard, background: "#232932" }}>
@@ -673,32 +530,6 @@ function Kpi({ label, value, sub, accent }: { label: string; value: string; sub:
       <div style={{ fontSize: 26, fontWeight: 700, color: accent || "#e6e8eb" }}>{value}</div>
       <div style={{ color: "#7d8794", fontSize: 12 }}>{sub}</div>
     </div>
-  );
-}
-
-// Lightweight inline SVG line chart — no chart library needed.
-function TrendLine({ data }: { data: SnapshotStat[] }) {
-  const W = 600, H = 180, padX = 36, padY = 20;
-  const max = Math.max(1, ...data.map((d) => d.outOfStock));
-  const x = (i: number) => padX + (i * (W - padX * 2)) / Math.max(1, data.length - 1);
-  const y = (v: number) => H - padY - (v / max) * (H - padY * 2);
-  const pts = data.map((d, i) => `${x(i)},${y(d.outOfStock)}`).join(" ");
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Out-of-stock count over time">
-      <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#333a44" />
-      <text x={4} y={y(max) + 4} fontSize={11} fill="#8b94a0">{max}</text>
-      <text x={4} y={H - padY + 4} fontSize={11} fill="#8b94a0">0</text>
-      <polyline points={pts} fill="none" stroke="#E24B4A" strokeWidth={2.5} />
-      {data.map((d, i) => (
-        <g key={d.date}>
-          <circle cx={x(i)} cy={y(d.outOfStock)} r={3.5} fill="#E24B4A" />
-          <text x={x(i)} y={H - 4} fontSize={11} fill="#9aa3ad" textAnchor="middle">{d.date.slice(5)}</text>
-        </g>
-      ))}
-      <text x={x(data.length - 1)} y={y(data[data.length - 1].outOfStock) - 8} fontSize={12} fill="#E24B4A" textAnchor="end" fontWeight={600}>
-        {data[data.length - 1].outOfStock}
-      </text>
-    </svg>
   );
 }
 
@@ -717,65 +548,6 @@ function Sparkline({ history }: { history: { qoh: number }[] }) {
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
       <polyline points={pts} fill="none" stroke={down ? "#E24B4A" : "#34d399"} strokeWidth={1.5} />
     </svg>
-  );
-}
-
-// ---- Daily changes tab ----------------------------------------------------
-
-function ChangesTab({ changes, activeDate, prevDate }: { changes: InventoryChange[]; activeDate: string; prevDate: string | null }) {
-  if (!prevDate) {
-    return <div style={{ ...card, marginTop: 20, color: "#aab2bd" }}>This is your earliest snapshot. Upload another day&apos;s file to see what sold and what arrived.</div>;
-  }
-  const sold = changes.filter((c) => c.delta < 0).sort((a, b) => a.delta - b.delta);
-  const received = changes.filter((c) => c.delta > 0).sort((a, b) => b.delta - a.delta);
-  const unitsSold = sold.reduce((s, c) => s - c.delta, 0);
-  const unitsReceived = received.reduce((s, c) => s + c.delta, 0);
-
-  return (
-    <div style={{ marginTop: 20 }}>
-      <p style={{ color: "#aab2bd", fontSize: 14, marginTop: 0 }}>
-        Change from <strong>{prevDate}</strong> to <strong>{activeDate}</strong>. Drops are sales; rises are stock arriving.
-      </p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
-        <Kpi label="Units sold" value={unitsSold.toLocaleString()} sub={`${sold.length} products`} accent="#E24B4A" />
-        <Kpi label="Units received" value={unitsReceived.toLocaleString()} sub={`${received.length} products`} accent="#34d399" />
-        <Kpi label="Net change" value={(unitsReceived - unitsSold).toLocaleString()} sub="received − sold" />
-      </div>
-
-      <ChangeTable title="Sold — inventory down" color="#E24B4A" rows={sold} />
-      <ChangeTable title="Received — inventory up" color="#34d399" rows={received} />
-    </div>
-  );
-}
-
-function ChangeTable({ title, color, rows }: { title: string; color: string; rows: InventoryChange[] }) {
-  return (
-    <div style={{ ...card, marginTop: 20 }}>
-      <h3 style={{ marginTop: 0, color, fontSize: 16 }}>{title} — {rows.length} items</h3>
-      {rows.length === 0 ? <p style={{ color: "#9aa3ad", fontSize: 14 }}>Nothing here for this day.</p> : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
-              <th style={th}>Vendor</th><th style={th}>Item</th>
-              <th style={{ ...th, textAlign: "center" }}>Was</th>
-              <th style={{ ...th, textAlign: "center" }}>Now</th>
-              <th style={{ ...th, textAlign: "center" }}>Change</th>
-            </tr></thead>
-            <tbody>
-              {rows.map((c) => (
-                <tr key={c.item + c.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
-                  <td style={td}>{c.vendor}</td>
-                  <td style={td}>{c.item}</td>
-                  <td style={{ ...td, textAlign: "center", color: "#8b94a0" }}>{c.prevQoh}</td>
-                  <td style={{ ...td, textAlign: "center" }}>{c.qoh}</td>
-                  <td style={{ ...td, textAlign: "center", fontWeight: 600, color }}>{c.delta > 0 ? `+${c.delta}` : c.delta}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
   );
 }
 
