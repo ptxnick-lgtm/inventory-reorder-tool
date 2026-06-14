@@ -334,6 +334,7 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -343,7 +344,7 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
           <button onClick={onNewUpload} style={btnGhost}>Upload new file</button>
           {activeDate && (
             <button
-              onClick={() => { if (window.confirm(`Delete the snapshot from ${activeDate}? This removes that day's uploaded inventory. You can re-upload the file later if needed.`)) onDeleteSnapshot(activeDate); }}
+              onClick={() => setConfirmDelete(true)}
               style={{ ...btnGhost, color: "#f0a3a3", borderColor: "#5a2a2a" }}
             >
               Delete snapshot
@@ -351,6 +352,23 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
           )}
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete this snapshot?"
+          confirmLabel="Yes, I'm sure"
+          cancelLabel="No, go back"
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => { setConfirmDelete(false); onDeleteSnapshot(activeDate); }}
+        >
+          <p style={{ margin: "0 0 10px" }}>
+            You&apos;re about to permanently remove the inventory uploaded for <strong style={{ color: "#e6e8eb" }}>{activeDate}</strong>.
+          </p>
+          <p style={{ margin: 0 }}>
+            This is worth a careful look first: the <strong>Insights</strong>, <strong>Daily changes</strong>, and <strong>Revenue</strong> tabs all work by comparing days against each other — so removing this day can shift the trends, sales, and reorder numbers shown elsewhere. If you re-upload the same file later, the figures come back.
+          </p>
+        </ConfirmModal>
+      )}
 
       {/* View tabs */}
       <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #333a44", flexWrap: "wrap" }}>
@@ -873,6 +891,33 @@ function ProductPricing({ items, productMap, onSave }: {
         <p style={{ color: "#9aa3ad", fontSize: 13, marginBottom: 0 }}>Showing first {shown.length} of {filtered.length}. Type in the search box to narrow down.</p>
       )}
       {items.length === 0 && <p style={{ color: "#9aa3ad", fontSize: 14 }}>Upload an inventory file first — your products will appear here.</p>}
+    </div>
+  );
+}
+
+// ---- Confirmation modal ----------------------------------------------------
+
+function ConfirmModal({ title, children, confirmLabel, cancelLabel, onConfirm, onCancel }: {
+  title: string;
+  children: React.ReactNode;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+    >
+      <div onClick={(e) => e.stopPropagation()} style={{ ...card, marginTop: 0, maxWidth: 460, width: "100%" }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 10px", color: "#f0a3a3" }}>{title}</h2>
+        <div style={{ color: "#c7cdd5", fontSize: 14, lineHeight: 1.55 }}>{children}</div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 22, flexWrap: "wrap" }}>
+          <button onClick={onCancel} style={btnGhost}>{cancelLabel}</button>
+          <button onClick={onConfirm} style={{ ...btnPrimary, background: "#e2574e", color: "#fff" }}>{confirmLabel}</button>
+        </div>
+      </div>
     </div>
   );
 }
