@@ -245,6 +245,9 @@ export default function Page() {
             <input type="date" value={snapshotDate} onChange={(e) => setSnapshotDate(e.target.value)} style={input} />
             {parseResult.detectedDate && <span style={{ color: "#9aa3ad", fontSize: 13 }}>(auto-detected from file)</span>}
           </div>
+          <p style={{ color: "#e6b450", fontSize: 13, margin: "8px 0 0" }}>
+            Set this to the day the inventory was actually counted — not today — so past reports build the history correctly. Re-using a date replaces what&apos;s already saved for it.
+          </p>
           <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
             <button onClick={confirmSave} style={btnPrimary}>Save & analyze</button>
             <button onClick={() => { setStage("idle"); setParseResult(null); }} style={btnGhost}>Cancel</button>
