@@ -45,9 +45,14 @@ create table if not exists vendors (
 -- those items can be hidden from the reorder lists.
 create table if not exists item_flags (
   item        text primary key,
-  status      text not null,
+  status      text not null default '',
+  note        text,
+  tags        text,
   updated_at  timestamptz default now()
 );
+-- If upgrading an existing item_flags table, add the note/tags columns:
+alter table item_flags add column if not exists note text;
+alter table item_flags add column if not exists tags text;
 
 -- Per-product cost and sales price, entered by hand in the app. Drives the
 -- revenue dashboard (units sold x price/cost between snapshots).

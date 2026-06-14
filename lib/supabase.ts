@@ -167,18 +167,24 @@ export async function upsertProducts(rows: ProductRow[]) {
   }
 }
 
-export async function fetchItemFlags(): Promise<{ item: string; status: string }[]> {
-  const { data, error } = await supabase.from("item_flags").select("item,status");
+export interface ItemFlagRow { item: string; status: string; note: string; tags: string; }
+
+export async function fetchItemFlags(): Promise<ItemFlagRow[]> {
+  const { data, error } = await supabase.from("item_flags").select("item,status,note,tags");
   if (error) throw error;
-  return (data || []) as { item: string; status: string }[];
+  return ((data || []) as any[]).map((r) => ({ item: r.item, status: r.status || "", note: r.note || "", tags: r.tags || "" }));
 }
 
-export async function setItemFlag(item: string, status: string | null) {
-  if (status === null) {
+// Save an item's status/note/tags, or delete the row entirely if all are empty.
+export async function saveItemMeta(item: string, meta: { status: string; note: string; tags: string }) {
+  const empty = !meta.status && !meta.note.trim() && !meta.tags.trim();
+  if (empty) {
     const { error } = await supabase.from("item_flags").delete().eq("item", item);
     if (error) throw error;
   } else {
-    const { error } = await supabase.from("item_flags").upsert({ item, status, updated_at: new Date().toISOString() }, { onConflict: "item" });
+    const { error } = await supabase
+      .from("item_flags")
+      .upsert({ item, status: meta.status, note: meta.note.trim() || null, tags: meta.tags.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "item" });
     if (error) throw error;
   }
 }

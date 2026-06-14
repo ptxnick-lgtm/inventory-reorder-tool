@@ -6,8 +6,11 @@ import { classify, inventoryChanges, ClassifiedItem, TIER_META, Tier, SnapshotRo
 import {
   fetchVendors, fetchAllSnapshots, insertSnapshot, fetchImportedDates,
   updateVendor, addVendor, fetchProducts, upsertProduct, upsertProducts, deleteSnapshot,
-  fetchItemFlags, setItemFlag, VendorRow, ProductRow,
+  fetchItemFlags, saveItemMeta, VendorRow, ProductRow,
 } from "@/lib/supabase";
+
+type ItemMeta = { status: string; note: string; tags: string };
+const isHiddenStatus = (s: string) => s === "discontinued" || s === "one_time";
 import { exportSortedPdf } from "@/lib/exportPdf";
 
 type Stage = "idle" | "parsing" | "review" | "saving" | "done";
@@ -48,7 +51,7 @@ export default function Page() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPricing, setShowPricing] = useState(false);
   const [products, setProducts] = useState<ProductRow[]>([]);
-  const [itemFlags, setItemFlags] = useState<Map<string, string>>(new Map());
+  const [itemMeta, setItemMeta] = useState<Map<string, ItemMeta>>(new Map());
   const [dragOver, setDragOver] = useState(false);
   const [booting, setBooting] = useState(true);
   const [loadPct, setLoadPct] = useState(0);
@@ -60,9 +63,10 @@ export default function Page() {
       setImportedDates(d);
       // Products and item flags are optional (their tables may not exist yet).
       try { setProducts(await fetchProducts()); } catch { /* pricing not set up yet */ }
-      let flags = new Map<string, string>();
-      try { flags = new Map((await fetchItemFlags()).map((f) => [f.item, f.status])); setItemFlags(flags); } catch { /* flags not set up yet */ }
-      if (d.length) { setActiveDate(d[d.length - 1]); await runClassify(d[d.length - 1], v, [...flags.keys()]); }
+      let meta = new Map<string, ItemMeta>();
+      try { meta = new Map((await fetchItemFlags()).map((f) => [f.item, { status: f.status, note: f.note, tags: f.tags }])); setItemMeta(meta); } catch { /* flags not set up yet */ }
+      const hidden = [...meta.entries()].filter(([, m]) => isHiddenStatus(m.status)).map(([i]) => i);
+      if (d.length) { setActiveDate(d[d.length - 1]); await runClassify(d[d.length - 1], v, hidden); }
     } catch (e: any) {
       setError("Could not connect to the database. Check that Supabase is set up (see SETUP.md). Details: " + e.message);
     }
@@ -76,7 +80,7 @@ export default function Page() {
     const excluded = vendorList.filter((v) => v.excluded).map((v) => v.name);
     const leadMap: Record<string, number> = {};
     vendorList.forEach((v) => (leadMap[v.name] = v.lead_days));
-    const hiddenItems = hidden ?? Array.from(itemFlags.keys());
+    const hiddenItems = hidden ?? [...itemMeta.entries()].filter(([, m]) => isHiddenStatus(m.status)).map(([i]) => i);
     setClassified(classify(snaps, date, { excludedVendors: excluded, leadDaysByVendor: leadMap, defaultLeadDays: 14, hiddenItems }));
   }
 
@@ -87,16 +91,21 @@ export default function Page() {
     classifyFrom(snaps, date, vendorList, hidden);
   }
 
-  async function handleFlag(item: string, status: string | null) {
-    const next = new Map(itemFlags);
-    if (status === null) next.delete(item); else next.set(item, status);
-    setItemFlags(next);
-    classifyFrom(allSnapshots, activeDate, vendors, [...next.keys()]);
-    try { await setItemFlag(item, status); }
+  async function handleSaveMeta(item: string, meta: ItemMeta) {
+    const next = new Map(itemMeta);
+    if (!meta.status && !meta.note.trim() && !meta.tags.trim()) next.delete(item);
+    else next.set(item, { status: meta.status, note: meta.note.trim(), tags: meta.tags.trim() });
+    setItemMeta(next);
+    const hidden = [...next.entries()].filter(([, m]) => isHiddenStatus(m.status)).map(([i]) => i);
+    classifyFrom(allSnapshots, activeDate, vendors, hidden);
+    try { await saveItemMeta(item, meta); }
     catch (e: any) { setError("Couldn't save that change — is the item_flags table set up in Supabase? Details: " + e.message); }
   }
 
-  const hiddenList = useMemo(() => Array.from(itemFlags.entries()).map(([item, status]) => ({ item, status })).sort((a, b) => a.item.localeCompare(b.item)), [itemFlags]);
+  const hiddenList = useMemo(
+    () => Array.from(itemMeta.entries()).filter(([, m]) => isHiddenStatus(m.status)).map(([item, m]) => ({ item, status: m.status, note: m.note })).sort((a, b) => a.item.localeCompare(b.item)),
+    [itemMeta]
+  );
 
   const excludedNames = useMemo(() => vendors.filter((v) => v.excluded).map((v) => v.name), [vendors]);
   const productMap = useMemo(() => {
@@ -315,7 +324,8 @@ export default function Page() {
           productMap={productMap}
           periodSales={periodSales}
           catalogue={catalogueItems}
-          onFlag={handleFlag}
+          itemMeta={itemMeta}
+          onSaveMeta={handleSaveMeta}
           hiddenItems={hiddenList}
           activeDate={activeDate}
           importedDates={importedDates}
@@ -401,8 +411,9 @@ interface DashboardProps {
   productMap: Map<string, ProductRow>;
   periodSales: Period[];
   catalogue: { item: string; vendor: string }[];
-  onFlag: (item: string, status: string | null) => void;
-  hiddenItems: { item: string; status: string }[];
+  itemMeta: Map<string, ItemMeta>;
+  onSaveMeta: (item: string, meta: ItemMeta) => void;
+  hiddenItems: { item: string; status: string; note: string }[];
   activeDate: string;
   importedDates: string[];
   onPickDate: (d: string) => void | Promise<void>;
@@ -414,7 +425,7 @@ interface DashboardProps {
 
 type View = "list" | "revenue" | "compare";
 
-function Dashboard({ classified, productMap, periodSales, catalogue, onFlag, hiddenItems, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
+function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, onSaveMeta, hiddenItems, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -504,8 +515,8 @@ function Dashboard({ classified, productMap, periodSales, catalogue, onFlag, hid
               </div>
             ))}
           </div>
-          {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} onFlag={onFlag} />}
-          {hiddenItems.length > 0 && <HiddenItems items={hiddenItems} onRestore={(item) => onFlag(item, null)} />}
+          {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} />}
+          {hiddenItems.length > 0 && <HiddenItems items={hiddenItems} onRestore={(item) => onSaveMeta(item, { status: "", note: itemMeta.get(item)?.note || "", tags: itemMeta.get(item)?.tags || "" })} />}
         </>
       )}
       {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
@@ -516,21 +527,54 @@ function Dashboard({ classified, productMap, periodSales, catalogue, onFlag, hid
 
 const FLAG_LABELS: Record<string, string> = { discontinued: "Discontinued", one_time: "One-time buy" };
 
-// Per-row ⋯ menu for flagging an item so it drops off the reorder lists.
-function RowMenu({ item, onFlag }: { item: string; onFlag: (item: string, status: string | null) => void }) {
+// Per-row ⋯ editor: add a note, custom tags, and/or hide the item from reorder.
+function RowMenu({ item, meta, onSave }: { item: string; meta?: ItemMeta; onSave: (item: string, meta: ItemMeta) => void }) {
   const [open, setOpen] = useState(false);
-  const menuItem: React.CSSProperties = { display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e6e8eb", padding: "8px 12px", fontSize: 13, cursor: "pointer" };
+  const [status, setStatus] = useState("");
+  const [note, setNote] = useState("");
+  const [tags, setTags] = useState("");
+
+  const openEditor = () => {
+    setStatus(meta?.status || ""); setNote(meta?.note || ""); setTags(meta?.tags || "");
+    setOpen(true);
+  };
+  const save = () => { onSave(item, { status, note, tags }); setOpen(false); };
+
+  const statusBtn = (val: string, label: string): React.CSSProperties => ({
+    flex: 1, padding: "6px 4px", fontSize: 12, borderRadius: 6, cursor: "pointer",
+    border: `1px solid ${status === val ? ACCENT : "#3a414c"}`,
+    background: status === val ? "rgba(91,155,255,.18)" : "transparent",
+    color: status === val ? "#cfe0ff" : "#aab2bd",
+  });
+
   return (
     <div style={{ position: "relative", display: "inline-block" }}>
-      <button onClick={() => setOpen((o) => !o)} aria-label={`Options for ${item}`}
-        style={{ background: "none", border: "none", color: "#7d8794", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}>⋯</button>
+      <button onClick={openEditor} aria-label={`Notes and tags for ${item}`}
+        style={{ background: "none", border: "none", color: (meta?.note || meta?.tags) ? ACCENT : "#7d8794", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}>⋯</button>
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 41, background: "#1e232b", border: "1px solid #333a44", borderRadius: 8, width: 230, boxShadow: "0 8px 24px rgba(0,0,0,.5)", overflow: "hidden", textAlign: "left" }}>
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "#7d8794", borderBottom: "1px solid #2a2f37" }}>Hide from reorder lists</div>
-            <button style={menuItem} onClick={() => { onFlag(item, "discontinued"); setOpen(false); }}>Don&apos;t reorder — discontinued</button>
-            <button style={menuItem} onClick={() => { onFlag(item, "one_time"); setOpen(false); }}>One-time buy</button>
+          <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 41, background: "#1e232b", border: "1px solid #333a44", borderRadius: 10, width: 270, padding: 12, boxShadow: "0 8px 24px rgba(0,0,0,.5)", textAlign: "left" }}>
+            <div style={{ fontSize: 11, color: "#7d8794", marginBottom: 5 }}>Status</div>
+            <div style={{ display: "flex", gap: 5 }}>
+              <button style={statusBtn("", "Active")} onClick={() => setStatus("")}>Active</button>
+              <button style={statusBtn("discontinued", "Discontinued")} onClick={() => setStatus("discontinued")}>Discontinued</button>
+              <button style={statusBtn("one_time", "One-time")} onClick={() => setStatus("one_time")}>One-time</button>
+            </div>
+            <div style={{ fontSize: 11, color: "#7d8794", margin: "10px 0 4px" }}>Note (why / how to order)</div>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+              placeholder="e.g. Order 2 — rep discounts at 2. Ask Dr. before restocking."
+              style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+            <div style={{ fontSize: 11, color: "#7d8794", margin: "10px 0 4px" }}>Tags (comma-separated)</div>
+            <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="seasonal, special order"
+              style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button onClick={save} style={{ ...btnPrimary, flex: 1, padding: "7px 0" }}>Save</button>
+              <button onClick={() => setOpen(false)} style={{ ...btnGhost, padding: "7px 12px" }}>Cancel</button>
+            </div>
+            {status === "discontinued" || status === "one_time"
+              ? <p style={{ color: "#7d8794", fontSize: 11, margin: "8px 0 0" }}>This item will be hidden from the reorder lists.</p>
+              : null}
           </div>
         </>
       )}
@@ -539,7 +583,7 @@ function RowMenu({ item, onFlag }: { item: string; onFlag: (item: string, status
 }
 
 // Collapsible list of items flagged out of the reorder lists, with restore.
-function HiddenItems({ items, onRestore }: { items: { item: string; status: string }[]; onRestore: (item: string) => void }) {
+function HiddenItems({ items, onRestore }: { items: { item: string; status: string; note: string }[]; onRestore: (item: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ ...card, marginTop: 16 }}>
@@ -551,7 +595,10 @@ function HiddenItems({ items, onRestore }: { items: { item: string; status: stri
           <tbody>
             {items.map((h) => (
               <tr key={h.item} style={{ borderBottom: "1px solid #2a2f37" }}>
-                <td style={td}>{h.item}</td>
+                <td style={td}>
+                  <div>{h.item}</div>
+                  {h.note && <div style={{ color: "#e6c97a", fontSize: 12, fontStyle: "italic", marginTop: 2 }}>{h.note}</div>}
+                </td>
                 <td style={{ ...td, color: "#7d8794" }}>{FLAG_LABELS[h.status] || h.status}</td>
                 <td style={{ ...td, textAlign: "right" }}>
                   <button onClick={() => onRestore(h.item)} style={{ ...btnGhost, padding: "4px 10px", fontSize: 13 }}>Restore</button>
@@ -567,13 +614,14 @@ function HiddenItems({ items, onRestore }: { items: { item: string; status: stri
 
 const cartKey = (i: { item: string; vendor: string }) => i.item + "||" + i.vendor;
 
-function TierTable({ items, tier, cart, onToggle, onClear, onFlag }: {
+function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta }: {
   items: ClassifiedItem[];
   tier: Tier;
   cart: Set<string>;
   onToggle: (key: string) => void;
   onClear: (keys: string[]) => void;
-  onFlag: (item: string, status: string | null) => void;
+  itemMeta: Map<string, ItemMeta>;
+  onSaveMeta: (item: string, meta: ItemMeta) => void;
 }) {
   const sorted = [...items].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.item.localeCompare(b.item));
   const checkedHere = sorted.filter((i) => cart.has(cartKey(i))).map(cartKey);
@@ -606,10 +654,22 @@ function TierTable({ items, tier, cart, onToggle, onClear, onFlag }: {
               {sorted.map((i, idx) => {
                 const key = cartKey(i);
                 const inCart = cart.has(key);
+                const m = itemMeta.get(i.item);
+                const tagList = (m?.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
                 return (
                   <tr key={idx} style={{ borderBottom: "1px solid #2a2f37", opacity: inCart ? 0.5 : 1 }}>
                     <td style={td}>{i.vendor}</td>
-                    <td style={{ ...td, textDecoration: inCart ? "line-through" : "none" }}>{i.item}</td>
+                    <td style={{ ...td, textDecoration: inCart ? "line-through" : "none" }}>
+                      <div>{i.item}</div>
+                      {tagList.length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
+                          {tagList.map((t) => (
+                            <span key={t} style={{ background: "#2a3340", color: "#9cc4ff", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>
+                          ))}
+                        </div>
+                      )}
+                      {m?.note && <div style={{ color: "#e6c97a", fontSize: 12, fontStyle: "italic", marginTop: 3 }}>{m.note}</div>}
+                    </td>
                     <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
                     <td style={{ ...td, textAlign: "center" }}>{i.po}</td>
                     <td style={{ ...td, textAlign: "center" }}><Sparkline history={i.history} /></td>
@@ -621,7 +681,7 @@ function TierTable({ items, tier, cart, onToggle, onClear, onFlag }: {
                         style={{ width: 17, height: 17, accentColor: ACCENT, cursor: "pointer" }} />
                     </td>
                     <td style={{ ...td, textAlign: "center" }}>
-                      <RowMenu item={i.item} onFlag={onFlag} />
+                      <RowMenu item={i.item} meta={m} onSave={onSaveMeta} />
                     </td>
                   </tr>
                 );
