@@ -11,6 +11,10 @@ import { exportSortedPdf } from "@/lib/exportPdf";
 
 type Stage = "idle" | "parsing" | "review" | "saving" | "done";
 
+type SoldItem = { item: string; vendor: string; units: number; revenue: number; profit: number };
+type Period = { date: string; sold: SoldItem[]; restockCost: number };
+type RevPoint = { date: string; revenue: number; profit: number };
+
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -85,19 +89,25 @@ export default function Page() {
     products.forEach((p) => m.set(p.item, p));
     return m;
   }, [products]);
-  // Revenue and profit earned between each pair of consecutive snapshots.
-  const revenueSeries = useMemo(() => {
-    const out: { date: string; revenue: number; profit: number }[] = [];
+  // Per-period item-level sales between each pair of consecutive snapshots, so
+  // the Revenue tab can aggregate over any timeframe (chart, totals, top sellers).
+  const periodSales = useMemo<Period[]>(() => {
+    const out: Period[] = [];
     for (let i = 1; i < importedDates.length; i++) {
       const ch = inventoryChanges(allSnapshots, importedDates[i], importedDates[i - 1], excludedNames);
-      let rev = 0, profit = 0;
-      for (const c of ch) if (c.delta < 0) {
+      const sold: SoldItem[] = [];
+      let restockCost = 0;
+      for (const c of ch) {
         const p = productMap.get(c.item);
-        const units = -c.delta;
-        rev += units * (p?.price || 0);
-        profit += units * ((p?.price || 0) - (p?.cost || 0));
+        const price = p?.price || 0, cost = p?.cost || 0;
+        if (c.delta < 0) {
+          const units = -c.delta;
+          sold.push({ item: c.item, vendor: c.vendor, units, revenue: units * price, profit: units * (price - cost) });
+        } else if (c.delta > 0) {
+          restockCost += c.delta * cost;
+        }
       }
-      out.push({ date: importedDates[i], revenue: rev, profit });
+      out.push({ date: importedDates[i], sold, restockCost });
     }
     return out;
   }, [allSnapshots, importedDates, excludedNames, productMap]);
@@ -282,7 +292,7 @@ export default function Page() {
           trend={trend}
           changes={changes}
           productMap={productMap}
-          revenueSeries={revenueSeries}
+          periodSales={periodSales}
           activeDate={activeDate}
           prevDate={prevDate}
           importedDates={importedDates}
@@ -353,7 +363,7 @@ interface DashboardProps {
   trend: SnapshotStat[];
   changes: InventoryChange[];
   productMap: Map<string, ProductRow>;
-  revenueSeries: { date: string; revenue: number; profit: number }[];
+  periodSales: Period[];
   activeDate: string;
   prevDate: string | null;
   importedDates: string[];
@@ -366,7 +376,7 @@ interface DashboardProps {
 
 type View = "list" | "changes" | "insights" | "revenue";
 
-function Dashboard({ classified, trend, changes, productMap, revenueSeries, activeDate, prevDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
+function Dashboard({ classified, trend, changes, productMap, periodSales, activeDate, prevDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -440,7 +450,7 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
       )}
       {view === "changes" && <ChangesTab changes={changes} activeDate={activeDate} prevDate={prevDate} />}
       {view === "insights" && <Insights classified={classified} trend={trend} />}
-      {view === "revenue" && <RevenueTab classified={classified} changes={changes} productMap={productMap} revenueSeries={revenueSeries} prevDate={prevDate} />}
+      {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
     </div>
   );
 }
@@ -734,39 +744,6 @@ function nDaysAgo(days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-type RevPoint = { date: string; revenue: number; profit: number };
-
-// Revenue-over-time card with a timeframe dropdown.
-function RevenueOverTime({ series }: { series: RevPoint[] }) {
-  const [tf, setTf] = useState("all");
-  const TFS: [string, string][] = [["all", "All time"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"]];
-  const days = tf === "all" ? 0 : parseInt(tf, 10);
-  const cutoff = days > 0 ? nDaysAgo(days) : null;
-  const data = cutoff ? series.filter((s) => s.date >= cutoff) : series;
-  const totalRev = data.reduce((s, r) => s + r.revenue, 0);
-  const totalProfit = data.reduce((s, r) => s + r.profit, 0);
-
-  return (
-    <div style={{ ...card, marginTop: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <h3 style={{ marginTop: 0, marginBottom: 0, fontSize: 16 }}>Revenue over time</h3>
-        <select value={tf} onChange={(e) => setTf(e.target.value)} style={{ ...input, padding: "5px 8px" }}>
-          {TFS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-        </select>
-      </div>
-      <div style={{ display: "flex", gap: 18, margin: "8px 0 4px", fontSize: 13, color: "#aab2bd" }}>
-        <span>Revenue <strong style={{ color: "#34d399" }}>{money(totalRev)}</strong></span>
-        <span>Profit <strong style={{ color: "#5b9bff" }}>{money(totalProfit)}</strong></span>
-      </div>
-      {data.length < 2 ? (
-        <p style={{ color: "#9aa3ad", fontSize: 14, marginBottom: 0 }}>Not enough data in this range yet — pick a wider timeframe or upload more snapshots.</p>
-      ) : (
-        <MoneyTrend data={data} />
-      )}
-    </div>
-  );
-}
-
 // Inline SVG revenue + profit chart with hover tooltips (no chart library).
 function MoneyTrend({ data }: { data: RevPoint[] }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -819,25 +796,37 @@ function MoneyTrend({ data }: { data: RevPoint[] }) {
   );
 }
 
-function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }: { classified: ClassifiedItem[]; changes: InventoryChange[]; productMap: Map<string, ProductRow>; revenueSeries: RevPoint[]; prevDate: string | null }) {
-  let revenue = 0, cogs = 0, restockCost = 0;
-  const sellers: { item: string; vendor: string; units: number; revenue: number }[] = [];
-  for (const c of changes) {
-    const p = productMap.get(c.item);
-    const price = p?.price || 0, cost = p?.cost || 0;
-    if (c.delta < 0) {
-      const units = -c.delta;
-      revenue += units * price;
-      cogs += units * cost;
-      sellers.push({ item: c.item, vendor: c.vendor, units, revenue: units * price });
-    } else if (c.delta > 0) {
-      restockCost += c.delta * cost;
-    }
-  }
-  const grossProfit = revenue - cogs;
-  const margin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+const TIMEFRAMES: [string, string][] = [["all", "All time"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"]];
 
-  // Inventory valuation as of the selected snapshot.
+function RevenueTab({ classified, productMap, periodSales }: { classified: ClassifiedItem[]; productMap: Map<string, ProductRow>; periodSales: Period[] }) {
+  const [tf, setTf] = useState("all");
+  const tfLabel = TIMEFRAMES.find(([v]) => v === tf)?.[1] || "All time";
+  const days = tf === "all" ? 0 : parseInt(tf, 10);
+  const cutoff = days > 0 ? nDaysAgo(days) : null;
+  const periods = cutoff ? periodSales.filter((p) => p.date >= cutoff) : periodSales;
+
+  // Chart series + sales totals for the selected timeframe.
+  const series: RevPoint[] = periods.map((p) => ({
+    date: p.date,
+    revenue: p.sold.reduce((s, x) => s + x.revenue, 0),
+    profit: p.sold.reduce((s, x) => s + x.profit, 0),
+  }));
+  const revenue = series.reduce((s, r) => s + r.revenue, 0);
+  const grossProfit = series.reduce((s, r) => s + r.profit, 0);
+  const margin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+  const restockCost = periods.reduce((s, p) => s + p.restockCost, 0);
+
+  // Top sellers aggregated across every period in the timeframe.
+  const agg = new Map<string, { item: string; vendor: string; units: number; revenue: number }>();
+  for (const p of periods) for (const x of p.sold) {
+    const k = x.item + "||" + x.vendor;
+    const e = agg.get(k) || { item: x.item, vendor: x.vendor, units: 0, revenue: 0 };
+    e.units += x.units; e.revenue += x.revenue;
+    agg.set(k, e);
+  }
+  const topSellers = Array.from(agg.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+
+  // Inventory valuation as of the selected snapshot (not timeframe-dependent).
   let invCost = 0, invRetail = 0, missing = 0;
   for (const i of classified) {
     const p = productMap.get(i.item);
@@ -845,14 +834,13 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
     invCost += i.qoh * (p?.cost || 0);
     invRetail += i.qoh * (p?.price || 0);
   }
-  const topSellers = sellers.sort((a, b) => b.revenue - a.revenue).slice(0, 10);
 
-  const lastUpdated = pricingUpdatedAt(productMap);
+  const hasSales = periodSales.length > 0;
 
   return (
     <div style={{ marginTop: 20 }}>
       <p style={{ color: "#7d8794", fontSize: 13, margin: "0 0 12px" }}>
-        Pricing last updated: {fmtDate(lastUpdated)}
+        Pricing last updated: {fmtDate(pricingUpdatedAt(productMap))}
       </p>
       {missing > 0 && (
         <div style={warnBox}>
@@ -860,21 +848,58 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
         </div>
       )}
 
-      {prevDate ? (
+      {!hasSales ? (
+        <div style={{ ...card, marginTop: 12, color: "#aab2bd" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
+      ) : (
         <>
-          <p style={{ color: "#aab2bd", fontSize: 14, margin: "12px 0 0" }}>Sales since the previous snapshot ({prevDate}):</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16 }}>Sales — {tfLabel}</h3>
+            <select value={tf} onChange={(e) => setTf(e.target.value)} style={{ ...input, padding: "5px 8px" }}>
+              {TIMEFRAMES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 10 }}>
             <Kpi label="Revenue" value={money(revenue)} sub="units sold × price" accent="#34d399" />
             <Kpi label="Gross profit" value={money(grossProfit)} sub="revenue − cost of goods" />
             <Kpi label="Margin" value={`${margin.toFixed(1)}%`} sub="profit ÷ revenue" />
             <Kpi label="Restock spend" value={money(restockCost)} sub="cost of stock received" />
           </div>
-        </>
-      ) : (
-        <div style={{ ...card, marginTop: 12, color: "#aab2bd" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
-      )}
 
-      {revenueSeries.length >= 1 && <RevenueOverTime series={revenueSeries} />}
+          <div style={{ ...card, marginTop: 20 }}>
+            <h3 style={{ marginTop: 0, fontSize: 16 }}>Revenue over time</h3>
+            {series.length < 2 ? (
+              <p style={{ color: "#9aa3ad", fontSize: 14, marginBottom: 0 }}>Not enough data in this range to chart — pick a wider timeframe or upload more snapshots.</p>
+            ) : (
+              <MoneyTrend data={series} />
+            )}
+          </div>
+
+          <div style={{ ...card, marginTop: 20 }}>
+            <h3 style={{ marginTop: 0, fontSize: 16 }}>Top sellers — {tfLabel} <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— by revenue</span></h3>
+            {topSellers.length === 0 ? (
+              <p style={{ color: "#9aa3ad", fontSize: 14 }}>No sales in this range, or no prices set yet.</p>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+                  <th style={th}>Item</th><th style={th}>Vendor</th>
+                  <th style={{ ...th, textAlign: "center" }}>Units sold</th>
+                  <th style={{ ...th, textAlign: "right" }}>Revenue</th>
+                </tr></thead>
+                <tbody>
+                  {topSellers.map((s) => (
+                    <tr key={s.item + s.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
+                      <td style={td}>{s.item}</td>
+                      <td style={td}>{s.vendor}</td>
+                      <td style={{ ...td, textAlign: "center" }}>{s.units}</td>
+                      <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{money(s.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
 
       <p style={{ color: "#aab2bd", fontSize: 14, margin: "20px 0 0" }}>Current inventory value:</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 8 }}>
@@ -882,33 +907,6 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
         <Kpi label="Retail value" value={money(invRetail)} sub="if it all sells" />
         <Kpi label="Potential profit" value={money(invRetail - invCost)} sub="retail − cost" />
       </div>
-
-      {prevDate && (
-        <div style={{ ...card, marginTop: 20 }}>
-          <h3 style={{ marginTop: 0, fontSize: 16 }}>Top sellers this period <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— by revenue</span></h3>
-          {topSellers.length === 0 ? (
-            <p style={{ color: "#9aa3ad", fontSize: 14 }}>No sales recorded, or no prices set yet.</p>
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
-                <th style={th}>Item</th><th style={th}>Vendor</th>
-                <th style={{ ...th, textAlign: "center" }}>Units sold</th>
-                <th style={{ ...th, textAlign: "right" }}>Revenue</th>
-              </tr></thead>
-              <tbody>
-                {topSellers.map((s) => (
-                  <tr key={s.item + s.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
-                    <td style={td}>{s.item}</td>
-                    <td style={td}>{s.vendor}</td>
-                    <td style={{ ...td, textAlign: "center" }}>{s.units}</td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{money(s.revenue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
     </div>
   );
 }
