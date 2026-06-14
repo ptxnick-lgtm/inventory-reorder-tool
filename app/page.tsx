@@ -430,6 +430,20 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
+
+  const itemTags = (item: string) => (itemMeta.get(item)?.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of classified) itemTags(i.item).forEach((t) => set.add(t));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [classified, itemMeta]);
+  const toggleTag = (t: string) => setActiveTags((prev) => { const n = new Set(prev); n.has(t) ? n.delete(t) : n.add(t); return n; });
+  const tierItems = (t: Tier) => {
+    const base = classified.filter((i) => i.tier === t);
+    if (activeTags.size === 0) return base;
+    return base.filter((i) => itemTags(i.item).some((tag) => activeTags.has(tag)));
+  };
 
   // "In cart" checkboxes — persisted locally so progress survives refresh/tab switches.
   const [cart, setCart] = useState<Set<string>>(new Set());
@@ -481,7 +495,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
             You&apos;re about to permanently remove the inventory uploaded for <strong style={{ color: "#e6e8eb" }}>{activeDate}</strong>.
           </p>
           <p style={{ margin: 0 }}>
-            This is worth a careful look first: the <strong>Insights</strong>, <strong>Daily changes</strong>, and <strong>Revenue</strong> tabs all work by comparing days against each other — so removing this day can shift the trends, sales, and reorder numbers shown elsewhere. If you re-upload the same file later, the figures come back.
+            This is worth a careful look first: the <strong>Revenue</strong> and <strong>Compare items</strong> tabs work by comparing days against each other — so removing this day can shift the sales and reorder numbers shown elsewhere. If you re-upload the same file later, the figures come back.
           </p>
         </ConfirmModal>
       )}
@@ -515,7 +529,22 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
               </div>
             ))}
           </div>
-          {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} />}
+          {allTags.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 16 }}>
+              <span style={{ fontSize: 13, color: "#7d8794" }}>Filter by tag:</span>
+              {allTags.map((t) => {
+                const on = activeTags.has(t);
+                return (
+                  <button key={t} onClick={() => toggleTag(t)}
+                    style={{ fontSize: 12, padding: "3px 11px", borderRadius: 999, cursor: "pointer", border: `1px solid ${on ? ACCENT : "#3a414c"}`, background: on ? "rgba(91,155,255,.18)" : "transparent", color: on ? "#cfe0ff" : "#aab2bd" }}>
+                    {t}
+                  </button>
+                );
+              })}
+              {activeTags.size > 0 && <button onClick={() => setActiveTags(new Set())} style={{ ...btnGhost, padding: "3px 11px", fontSize: 12 }}>Clear</button>}
+            </div>
+          )}
+          {openTier && <TierTable items={tierItems(openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} />}
           {hiddenItems.length > 0 && <HiddenItems items={hiddenItems} onRestore={(item) => onSaveMeta(item, { status: "", note: itemMeta.get(item)?.note || "", tags: itemMeta.get(item)?.tags || "" })} />}
         </>
       )}
