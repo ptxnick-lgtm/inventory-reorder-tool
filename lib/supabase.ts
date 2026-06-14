@@ -112,6 +112,14 @@ export async function upsertProduct(item: string, cost: number, price: number) {
   if (error) throw error;
 }
 
+// Remove a whole snapshot for a date: the inventory rows plus its import-log entry.
+export async function deleteSnapshot(date: string) {
+  const { error: e1 } = await supabase.from("snapshots").delete().eq("snapshot_date", date);
+  if (e1) throw e1;
+  const { error: e2 } = await supabase.from("imported_files").delete().eq("snapshot_date", date);
+  if (e2) throw e2;
+}
+
 export async function updateVendor(name: string, patch: Partial<VendorRow>) {
   const { error } = await supabase.from("vendors").update(patch).eq("name", name);
   if (error) throw error;

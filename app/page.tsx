@@ -5,7 +5,7 @@ import { parseCSVText, parseXLSX, ParseResult } from "@/lib/parser";
 import { classify, snapshotTrend, inventoryChanges, ClassifiedItem, SnapshotStat, InventoryChange, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
 import {
   fetchVendors, fetchAllSnapshots, insertSnapshot, fetchImportedDates,
-  updateVendor, addVendor, fetchProducts, upsertProduct, VendorRow, ProductRow,
+  updateVendor, addVendor, fetchProducts, upsertProduct, deleteSnapshot, VendorRow, ProductRow,
 } from "@/lib/supabase";
 import { exportSortedPdf } from "@/lib/exportPdf";
 
@@ -83,6 +83,19 @@ export default function Page() {
     allSnapshots.forEach((s) => { if (s.item && !seen.has(s.item)) seen.set(s.item, s.vendor); });
     return Array.from(seen.entries()).map(([item, vendor]) => ({ item, vendor })).sort((a, b) => a.item.localeCompare(b.item));
   }, [allSnapshots]);
+
+  async function handleDeleteSnapshot(date: string) {
+    setError("");
+    try {
+      await deleteSnapshot(date);
+      const d = await fetchImportedDates();
+      setImportedDates(d);
+      if (d.length) { const nd = d[d.length - 1]; setActiveDate(nd); await runClassify(nd, vendors); }
+      else { setActiveDate(""); setClassified(null); setAllSnapshots([]); }
+    } catch (e: any) {
+      setError("Could not delete that snapshot: " + e.message);
+    }
+  }
 
   async function saveProduct(item: string, cost: number, price: number) {
     await upsertProduct(item, cost, price);
@@ -241,6 +254,7 @@ export default function Page() {
           tierCounts={tierCounts}
           onExport={() => exportSortedPdf(classified, activeDate)}
           onNewUpload={() => { setStage("idle"); setParseResult(null); }}
+          onDeleteSnapshot={handleDeleteSnapshot}
         />
       )}
 
@@ -311,11 +325,12 @@ interface DashboardProps {
   tierCounts: (t: Tier) => number;
   onExport: () => void;
   onNewUpload: () => void;
+  onDeleteSnapshot: (date: string) => void | Promise<void>;
 }
 
 type View = "list" | "changes" | "insights" | "revenue";
 
-function Dashboard({ classified, trend, changes, productMap, revenueSeries, activeDate, prevDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload }: DashboardProps) {
+function Dashboard({ classified, trend, changes, productMap, revenueSeries, activeDate, prevDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -323,9 +338,17 @@ function Dashboard({ classified, trend, changes, productMap, revenueSeries, acti
     <div style={{ marginTop: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <SnapshotCalendar importedDates={importedDates} activeDate={activeDate} onPick={(d) => onPickDate(d)} />
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button onClick={onExport} style={btnPrimary}>Download PDF</button>
           <button onClick={onNewUpload} style={btnGhost}>Upload new file</button>
+          {activeDate && (
+            <button
+              onClick={() => { if (window.confirm(`Delete the snapshot from ${activeDate}? This removes that day's uploaded inventory. You can re-upload the file later if needed.`)) onDeleteSnapshot(activeDate); }}
+              style={{ ...btnGhost, color: "#f0a3a3", borderColor: "#5a2a2a" }}
+            >
+              Delete snapshot
+            </button>
+          )}
         </div>
       </div>
 
