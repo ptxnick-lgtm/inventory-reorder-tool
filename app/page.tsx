@@ -282,6 +282,7 @@ export default function Page() {
           classified={classified}
           productMap={productMap}
           periodSales={periodSales}
+          catalogue={catalogueItems}
           activeDate={activeDate}
           importedDates={importedDates}
           onPickDate={async (d) => { setActiveDate(d); await runClassify(d, vendors); }}
@@ -350,6 +351,7 @@ interface DashboardProps {
   classified: ClassifiedItem[];
   productMap: Map<string, ProductRow>;
   periodSales: Period[];
+  catalogue: { item: string; vendor: string }[];
   activeDate: string;
   importedDates: string[];
   onPickDate: (d: string) => void | Promise<void>;
@@ -361,7 +363,7 @@ interface DashboardProps {
 
 type View = "list" | "revenue";
 
-function Dashboard({ classified, productMap, periodSales, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
+function Dashboard({ classified, productMap, periodSales, catalogue, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -454,7 +456,7 @@ function Dashboard({ classified, productMap, periodSales, activeDate, importedDa
           {openTier && <TierTable items={classified.filter((i: ClassifiedItem) => i.tier === openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} />}
         </>
       )}
-      {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
+      {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} catalogue={catalogue} />}
     </div>
   );
 }
@@ -617,7 +619,7 @@ function MoneyTrend({ data }: { data: RevPoint[] }) {
 
 const TIMEFRAMES: [string, string][] = [["all", "All time"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"]];
 
-function RevenueTab({ classified, productMap, periodSales }: { classified: ClassifiedItem[]; productMap: Map<string, ProductRow>; periodSales: Period[] }) {
+function RevenueTab({ classified, productMap, periodSales, catalogue }: { classified: ClassifiedItem[]; productMap: Map<string, ProductRow>; periodSales: Period[]; catalogue: { item: string; vendor: string }[] }) {
   const [tf, setTf] = useState("all");
   const tfLabel = TIMEFRAMES.find(([v]) => v === tf)?.[1] || "All time";
   const days = tf === "all" ? 0 : parseInt(tf, 10);
@@ -635,15 +637,16 @@ function RevenueTab({ classified, productMap, periodSales }: { classified: Class
   const margin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const restockCost = periods.reduce((s, p) => s + p.restockCost, 0);
 
-  // Top sellers aggregated across every period in the timeframe.
-  const agg = new Map<string, { item: string; vendor: string; units: number; revenue: number }>();
+  // Per-item sales aggregated across every period in the timeframe (drives both
+  // Top sellers and the Compare items tool).
+  const salesByItem = new Map<string, SoldItem>();
   for (const p of periods) for (const x of p.sold) {
     const k = x.item + "||" + x.vendor;
-    const e = agg.get(k) || { item: x.item, vendor: x.vendor, units: 0, revenue: 0 };
-    e.units += x.units; e.revenue += x.revenue;
-    agg.set(k, e);
+    const e = salesByItem.get(k) || { item: x.item, vendor: x.vendor, units: 0, revenue: 0, profit: 0 };
+    e.units += x.units; e.revenue += x.revenue; e.profit += x.profit;
+    salesByItem.set(k, e);
   }
-  const topSellers = Array.from(agg.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  const topSellers = Array.from(salesByItem.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
 
   // Inventory valuation as of the selected snapshot (not timeframe-dependent).
   let invCost = 0, invRetail = 0, missing = 0;
@@ -717,6 +720,8 @@ function RevenueTab({ classified, productMap, periodSales }: { classified: Class
               </table>
             )}
           </div>
+
+          <CompareItems catalogue={catalogue} sales={salesByItem} tfLabel={tfLabel} />
         </>
       )}
 
@@ -726,6 +731,104 @@ function RevenueTab({ classified, productMap, periodSales }: { classified: Class
         <Kpi label="Retail value" value={money(invRetail)} sub="if it all sells" />
         <Kpi label="Potential profit" value={money(invRetail - invCost)} sub="retail − cost" />
       </div>
+    </div>
+  );
+}
+
+// ---- Compare items --------------------------------------------------------
+
+function CompareItems({ catalogue, sales, tfLabel }: {
+  catalogue: { item: string; vendor: string }[];
+  sales: Map<string, SoldItem>;
+  tfLabel: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const keyOf = (c: { item: string; vendor: string }) => c.item + "||" + c.vendor;
+
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? catalogue.filter((c) => c.item.toLowerCase().includes(q) && !selected.includes(keyOf(c))).slice(0, 8)
+    : [];
+
+  const rows = selected.map((k) => {
+    const s = sales.get(k);
+    const [item, vendor] = k.split("||");
+    return { key: k, item, vendor, units: s?.units || 0, revenue: s?.revenue || 0, profit: s?.profit || 0 };
+  }).sort((a, b) => b.units - a.units);
+  const maxUnits = Math.max(1, ...rows.map((r) => r.units));
+  const winner = rows.length >= 2 && rows[0].units > 0 ? rows[0] : null;
+  const runnerUp = winner ? rows[1] : null;
+
+  const add = (c: { item: string; vendor: string }) => {
+    setSelected((prev) => (prev.length >= 6 || prev.includes(keyOf(c)) ? prev : [...prev, keyOf(c)]));
+    setQuery("");
+  };
+
+  return (
+    <div style={{ ...card, marginTop: 20 }}>
+      <h3 style={{ marginTop: 0, fontSize: 16 }}>Compare items <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— how variants stack up over {tfLabel}</span></h3>
+      <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 0 }}>Search and add items (e.g. two flavors) to compare what sold over the selected timeframe.</p>
+
+      <input
+        type="text" placeholder="Search items to compare…" value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        style={{ ...input, width: "100%", maxWidth: 360 }}
+      />
+      {matches.length > 0 && (
+        <div style={{ border: "1px solid #333a44", borderRadius: 8, marginTop: 6, maxWidth: 360, overflow: "hidden" }}>
+          {matches.map((c) => (
+            <div key={keyOf(c)} onClick={() => add(c)} style={{ padding: "8px 10px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #2a2f37" }}>
+              {c.item} <span style={{ color: "#7d8794" }}>· {c.vendor}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selected.length === 0 ? (
+        <p style={{ color: "#7d8794", fontSize: 14, marginBottom: 0 }}>No items added yet — search above to start a comparison.</p>
+      ) : (
+        <>
+          {winner && (
+            <div style={{ ...statCard, marginTop: 14, borderLeft: `3px solid #34d399`, borderRadius: 8 }}>
+              Best seller: <strong style={{ color: "#e6e8eb" }}>{winner.item}</strong> — {winner.units} sold
+              {runnerUp && runnerUp.units > 0 && <> vs {runnerUp.units} for {runnerUp.item}{runnerUp.units > 0 ? ` (${(winner.units / runnerUp.units).toFixed(1)}× more)` : ""}</>}
+              {runnerUp && runnerUp.units === 0 && <> — the others had no sales this period</>}.
+            </div>
+          )}
+          <div style={{ overflowX: "auto", marginTop: 14 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+                <th style={th}>Item</th>
+                <th style={{ ...th, textAlign: "center" }}>Units sold</th>
+                <th style={{ ...th, textAlign: "right" }}>Revenue</th>
+                <th style={{ ...th, textAlign: "right" }}>Profit</th>
+                <th style={{ ...th, width: 24 }}></th>
+              </tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.key} style={{ borderBottom: "1px solid #2a2f37" }}>
+                    <td style={td}>
+                      <div>{r.item} <span style={{ color: "#7d8794", fontSize: 12 }}>· {r.vendor}</span></div>
+                      <div style={{ background: "#2a2f37", borderRadius: 3, height: 6, marginTop: 4 }}>
+                        <div style={{ width: `${(r.units / maxUnits) * 100}%`, background: ACCENT, height: 6, borderRadius: 3 }} />
+                      </div>
+                    </td>
+                    <td style={{ ...td, textAlign: "center", fontWeight: 600 }}>{r.units}</td>
+                    <td style={{ ...td, textAlign: "right" }}>{money(r.revenue)}</td>
+                    <td style={{ ...td, textAlign: "right" }}>{money(r.profit)}</td>
+                    <td style={{ ...td, textAlign: "center" }}>
+                      <button onClick={() => setSelected((prev) => prev.filter((k) => k !== r.key))}
+                        aria-label={`Remove ${r.item}`}
+                        style={{ background: "none", border: "none", color: "#7d8794", cursor: "pointer", fontSize: 16 }}>×</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
