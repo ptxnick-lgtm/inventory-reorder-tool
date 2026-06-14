@@ -737,6 +737,27 @@ function RevenueTab({ classified, productMap, periodSales, catalogue }: { classi
 
 // ---- Compare items --------------------------------------------------------
 
+// Strip trailing flavor/size descriptors to find a product's base name, so
+// variants (BLUE/ORANGE, 50MG/100MG, 120ct/240ct) collapse to one group.
+function baseName(item: string): string {
+  let s = item.replace(/\s+/g, " ").trim();
+  const pats = [
+    /[\s-]+\d+(\.\d+)?\s?(ct|count|mg|mcg|oz|g|kg|lb|lbs|ml|caps?|tabs?|softgels?|gummies|packets?|paks?|pkts?|servings?)\b\.?$/i,
+    /[\s-]+\d+(\.\d+)?$/,
+    /[\s-]+[A-Z]{2,}$/,
+    /[\s-]+(blue|orange|berry|cherry|grape|lemon|lime|vanilla|chocolate|strawberry|tangerine|mint|raspberry|peach|original|unflavored|natural|citrus)\b\.?$/i,
+  ];
+  for (let n = 0; n < 6; n++) {
+    let changed = false;
+    for (const re of pats) {
+      const next = s.replace(re, "").replace(/[-\s]+$/, "").trim();
+      if (next && next.length >= 3 && next !== s) { s = next; changed = true; }
+    }
+    if (!changed) break;
+  }
+  return s;
+}
+
 function CompareItems({ catalogue, sales, tfLabel }: {
   catalogue: { item: string; vendor: string }[];
   sales: Map<string, SoldItem>;
@@ -745,6 +766,22 @@ function CompareItems({ catalogue, sales, tfLabel }: {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const keyOf = (c: { item: string; vendor: string }) => c.item + "||" + c.vendor;
+
+  // Auto-detected variant groups (same vendor + base name, 2+ members).
+  const groups = useMemo(() => {
+    const m = new Map<string, { base: string; vendor: string; keys: string[]; units: number }>();
+    for (const c of catalogue) {
+      const gk = c.vendor + "::" + baseName(c.item).toLowerCase();
+      const e = m.get(gk) || { base: baseName(c.item), vendor: c.vendor, keys: [], units: 0 };
+      const k = keyOf(c);
+      e.keys.push(k);
+      e.units += sales.get(k)?.units || 0;
+      m.set(gk, e);
+    }
+    return Array.from(m.values())
+      .filter((g) => g.keys.length >= 2)
+      .sort((a, b) => b.units - a.units || a.base.localeCompare(b.base));
+  }, [catalogue, sales]);
 
   const q = query.trim().toLowerCase();
   const matches = q
@@ -768,13 +805,25 @@ function CompareItems({ catalogue, sales, tfLabel }: {
   return (
     <div style={{ ...card, marginTop: 20 }}>
       <h3 style={{ marginTop: 0, fontSize: 16 }}>Compare items <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— how variants stack up over {tfLabel}</span></h3>
-      <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 0 }}>Search and add items (e.g. two flavors) to compare what sold over the selected timeframe.</p>
+      <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 0 }}>Jump to a detected variant group, or search and add items by hand.</p>
 
-      <input
-        type="text" placeholder="Search items to compare…" value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        style={{ ...input, width: "100%", maxWidth: 360 }}
-      />
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {groups.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => { const g = groups[Number(e.target.value)]; if (g) { setSelected(g.keys.slice(0, 6)); setQuery(""); } }}
+            style={{ ...input, maxWidth: 360 }}
+          >
+            <option value="" disabled>Jump to a variant group… ({groups.length})</option>
+            {groups.map((g, i) => <option key={i} value={i}>{g.base} · {g.vendor} ({g.keys.length})</option>)}
+          </select>
+        )}
+        <input
+          type="text" placeholder="…or search items to add" value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{ ...input, flex: 1, minWidth: 200, maxWidth: 360 }}
+        />
+      </div>
       {matches.length > 0 && (
         <div style={{ border: "1px solid #333a44", borderRadius: 8, marginTop: 6, maxWidth: 360, overflow: "hidden" }}>
           {matches.map((c) => (
