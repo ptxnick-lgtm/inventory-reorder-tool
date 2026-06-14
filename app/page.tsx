@@ -330,7 +330,7 @@ function BootScreen({ pct }: { pct: number }) {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 340, textAlign: "center" }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 6px", color: "#e6e8eb" }}>Inventory Reorder Tool</h1>
-        <p style={{ color: "#aab2bd", fontSize: 14, marginTop: 0 }}>Loading your inventory…</p>
+        <p style={{ color: "#aab2bd", fontSize: 14, marginTop: 0 }}>We are getting things ready for you…</p>
         <div style={{ background: "#232932", borderRadius: 999, height: 8, overflow: "hidden", border: "1px solid #333a44" }}>
           <div style={{ width: `${Math.max(6, pct)}%`, background: ACCENT, height: "100%", borderRadius: 999, transition: "width .25s ease" }} />
         </div>
