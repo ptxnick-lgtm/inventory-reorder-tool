@@ -99,6 +99,7 @@ export interface ProductRow {
   item: string;
   cost: number;
   price: number;
+  updated_at?: string;
 }
 
 export async function fetchProducts(): Promise<ProductRow[]> {
@@ -108,7 +109,7 @@ export async function fetchProducts(): Promise<ProductRow[]> {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("products")
-      .select("item,cost,price")
+      .select("item,cost,price,updated_at")
       .order("item")
       .range(from, from + PAGE - 1);
     if (error) throw error;

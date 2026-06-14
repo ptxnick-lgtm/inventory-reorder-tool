@@ -16,6 +16,19 @@ function todayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function fmtDate(iso: string | null): string {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "never" : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// Most recent updated_at across a product map (when pricing was last touched).
+function pricingUpdatedAt(productMap: Map<string, ProductRow>): string | null {
+  let max = "";
+  for (const p of productMap.values()) if (p.updated_at && p.updated_at > max) max = p.updated_at;
+  return max || null;
+}
+
 export default function Page() {
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [importedDates, setImportedDates] = useState<string[]>([]);
@@ -111,7 +124,7 @@ export default function Page() {
     await upsertProduct(item, cost, price);
     setProducts((prev) => {
       const next = prev.filter((p) => p.item !== item);
-      next.push({ item, cost, price });
+      next.push({ item, cost, price, updated_at: new Date().toISOString() });
       return next;
     });
   }
@@ -834,8 +847,13 @@ function RevenueTab({ classified, changes, productMap, revenueSeries, prevDate }
   }
   const topSellers = sellers.sort((a, b) => b.revenue - a.revenue).slice(0, 10);
 
+  const lastUpdated = pricingUpdatedAt(productMap);
+
   return (
     <div style={{ marginTop: 20 }}>
+      <p style={{ color: "#7d8794", fontSize: 13, margin: "0 0 12px" }}>
+        Pricing last updated: {fmtDate(lastUpdated)}
+      </p>
       {missing > 0 && (
         <div style={warnBox}>
           {missing} of {classified.length} items have no cost/price set. Add them under <strong>Product pricing</strong> (top right) to make these numbers complete.
@@ -954,6 +972,7 @@ function ProductPricing({ items, productMap, onSave, onImport }: {
         </label>
         <span style={{ color: "#9aa3ad", fontSize: 13 }}>Use a report with “Avg Cost” and “Sales Price” columns.</span>
         {importMsg && <span style={{ color: importMsg.startsWith("Import failed") ? "#f0a3a3" : "#34d399", fontSize: 13 }}>{importMsg}</span>}
+        <span style={{ color: "#7d8794", fontSize: 13, marginLeft: "auto" }}>Pricing last updated: {fmtDate(pricingUpdatedAt(productMap))}</span>
       </div>
 
       <input
