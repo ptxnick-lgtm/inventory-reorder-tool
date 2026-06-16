@@ -28,6 +28,9 @@ export interface ClassifyOptions {
   leadDaysByVendor: Record<string, number>;
   defaultLeadDays: number;
   hiddenItems?: string[];
+  // Per-item manual overrides for reorder minimum / maximum (win over the uploaded value).
+  reorderMinByItem?: Record<string, number>;
+  reorderMaxByItem?: Record<string, number>;
 }
 
 const MS_PER_DAY = 86400000;
@@ -96,11 +99,15 @@ export function classify(
     let weeksOfStock: number | null = null;
     if (cpw && cpw > 0) weeksOfStock = latest.qoh / cpw;
 
-    // Suggested order quantity: enough to cover the vendor's lead time plus a ~2-week
-    // safety/review buffer, minus what's already on hand and on order. Only meaningful
-    // when we have a real consumption rate.
+    // Manual override (set in the app) wins over the uploaded reorder minimum.
+    const reorderMax = opts.reorderMaxByItem?.[latest.item] ?? null;
+
+    // Suggested order quantity: if a max ("order up to") is set, fill to it;
+    // otherwise estimate from velocity (lead time + ~2-week buffer).
     let suggestedQty: number | null = null;
-    if (cpw && cpw > 0) {
+    if (reorderMax !== null && reorderMax > 0) {
+      suggestedQty = Math.max(0, reorderMax - latest.qoh - latest.po);
+    } else if (cpw && cpw > 0) {
       suggestedQty = Math.max(0, Math.ceil(cpw * (leadWeeks + 2) - latest.qoh - latest.po));
     }
 
@@ -110,10 +117,10 @@ export function classify(
     const priorRecs = recs.slice(0, -1);
     const wasZeroNoPObefore = priorRecs.length > 0 && priorRecs.every((r) => r.qoh === 0 && r.po === 0);
 
-    // When the item has a reorder minimum set in QuickBooks, that's the owner's
-    // explicit threshold — trust it over the velocity estimate. Velocity logic
-    // still handles every item that has no minimum set.
-    const reorderMin = latest.reorder_min ?? null;
+    // When the item has a reorder minimum (from QuickBooks or set in the app),
+    // that's the owner's explicit threshold — trust it over the velocity estimate.
+    // Velocity logic still handles every item that has no minimum set.
+    const reorderMin = opts.reorderMinByItem?.[latest.item] ?? latest.reorder_min ?? null;
     const hasMin = reorderMin !== null && reorderMin > 0;
 
     if (latest.po > 0) {

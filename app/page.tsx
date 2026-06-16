@@ -37,6 +37,16 @@ function pricingUpdatedAt(productMap: Map<string, ProductRow>): string | null {
   return max || null;
 }
 
+// Per-item reorder min/max overrides drawn from the products table.
+function reorderOverrides(prods: ProductRow[]): { min: Record<string, number>; max: Record<string, number> } {
+  const min: Record<string, number> = {}, max: Record<string, number> = {};
+  for (const p of prods) {
+    if (p.reorderMin != null) min[p.item] = p.reorderMin;
+    if (p.reorderMax != null) max[p.item] = p.reorderMax;
+  }
+  return { min, max };
+}
+
 export default function Page() {
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [importedDates, setImportedDates] = useState<string[]>([]);
@@ -62,11 +72,12 @@ export default function Page() {
       setVendors(v);
       setImportedDates(d);
       // Products and item flags are optional (their tables may not exist yet).
-      try { setProducts(await fetchProducts()); } catch { /* pricing not set up yet */ }
+      let prods: ProductRow[] = [];
+      try { prods = await fetchProducts(); setProducts(prods); } catch { /* pricing not set up yet */ }
       let meta = new Map<string, ItemMeta>();
       try { meta = new Map((await fetchItemFlags()).map((f) => [f.item, { status: f.status, note: f.note, tags: f.tags, group: f.group }])); setItemMeta(meta); } catch { /* flags not set up yet */ }
       const hidden = [...meta.entries()].filter(([, m]) => isHiddenStatus(m.status)).map(([i]) => i);
-      if (d.length) { setActiveDate(d[d.length - 1]); await runClassify(d[d.length - 1], v, hidden); }
+      if (d.length) { setActiveDate(d[d.length - 1]); await runClassify(d[d.length - 1], v, hidden, reorderOverrides(prods)); }
     } catch (e: any) {
       setError("Could not connect to the database. Check that Supabase is set up (see SETUP.md). Details: " + e.message);
     }
@@ -76,19 +87,20 @@ export default function Page() {
 
   // Re-run classification from snapshots already in memory (no network) — used
   // when only the selected date (or hidden-item flags) change.
-  function classifyFrom(snaps: SnapshotRow[], date: string, vendorList: VendorRow[], hidden?: string[]) {
+  function classifyFrom(snaps: SnapshotRow[], date: string, vendorList: VendorRow[], hidden?: string[], overrides?: { min: Record<string, number>; max: Record<string, number> }) {
     const excluded = vendorList.filter((v) => v.excluded).map((v) => v.name);
     const leadMap: Record<string, number> = {};
     vendorList.forEach((v) => (leadMap[v.name] = v.lead_days));
     const hiddenItems = hidden ?? [...itemMeta.entries()].filter(([, m]) => isHiddenStatus(m.status)).map(([i]) => i);
-    setClassified(classify(snaps, date, { excludedVendors: excluded, leadDaysByVendor: leadMap, defaultLeadDays: 14, hiddenItems }));
+    const ov = overrides ?? reorderOverrides(products);
+    setClassified(classify(snaps, date, { excludedVendors: excluded, leadDaysByVendor: leadMap, defaultLeadDays: 14, hiddenItems, reorderMinByItem: ov.min, reorderMaxByItem: ov.max }));
   }
 
   // Fetch all snapshots, then classify — used on load and after upload/delete.
-  async function runClassify(date: string, vendorList: VendorRow[], hidden?: string[]) {
+  async function runClassify(date: string, vendorList: VendorRow[], hidden?: string[], overrides?: { min: Record<string, number>; max: Record<string, number> }) {
     const snaps = (await fetchAllSnapshots((done, total) => setLoadPct(total ? Math.round((done / total) * 100) : 0))) as SnapshotRow[];
     setAllSnapshots(snaps);
-    classifyFrom(snaps, date, vendorList, hidden);
+    classifyFrom(snaps, date, vendorList, hidden, overrides);
   }
 
   async function handleSaveMeta(item: string, meta: ItemMeta) {
@@ -149,14 +161,21 @@ export default function Page() {
     }
   }
 
-  async function saveProduct(item: string, cost: number, price: number) {
-    await upsertProduct(item, cost, price);
-    setProducts((prev) => {
-      const next = prev.filter((p) => p.item !== item);
-      next.push({ item, cost, price, updated_at: new Date().toISOString() });
-      return next;
-    });
+  async function saveProduct(item: string, cost: number, price: number, reorderMin: number | null = null, reorderMax: number | null = null) {
+    const next = products.filter((p) => p.item !== item).concat([{ item, cost, price, reorderMin, reorderMax, updated_at: new Date().toISOString() }]);
+    setProducts(next);
+    // Reorder min/max affect the reorder list, so re-run classification.
+    classifyFrom(allSnapshots, activeDate, vendors, undefined, reorderOverrides(next));
+    try { await upsertProduct(item, cost, price, reorderMin, reorderMax); }
+    catch (e: any) { setError("Couldn't save that change: " + e.message); }
   }
+
+  // The reorder minimum as it arrived in the latest upload, shown as a hint in the editor.
+  const uploadedMin = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of allSnapshots) if (s.snapshot_date === activeDate && s.reorder_min != null) m.set(s.item, s.reorder_min);
+    return m;
+  }, [allSnapshots, activeDate]);
 
   // Bulk-load cost/price from a pricing export (Avg Cost + Sales Price columns).
   async function importPricing(file: File): Promise<number> {
@@ -248,7 +267,7 @@ export default function Page() {
       {error && <div style={errBox}>{error}</div>}
 
       {showSettings && <VendorSettings vendors={vendors} onChange={loadDb} />}
-      {showPricing && <ProductPricing items={catalogueItems} productMap={productMap} onSave={saveProduct} onImport={importPricing} />}
+      {showPricing && <ProductPricing items={catalogueItems} productMap={productMap} uploadedMin={uploadedMin} onSave={saveProduct} onImport={importPricing} />}
 
       {/* Upload zone */}
       {(stage === "idle" || stage === "parsing") && (
@@ -1166,14 +1185,17 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
 
 // ---- Product pricing editor -----------------------------------------------
 
-function ProductPricing({ items, productMap, onSave, onImport }: {
+type PriceField = "cost" | "price" | "min" | "max";
+
+function ProductPricing({ items, productMap, uploadedMin, onSave, onImport }: {
   items: { item: string; vendor: string }[];
   productMap: Map<string, ProductRow>;
-  onSave: (item: string, cost: number, price: number) => Promise<void>;
+  uploadedMin: Map<string, number>;
+  onSave: (item: string, cost: number, price: number, reorderMin: number | null, reorderMax: number | null) => Promise<void>;
   onImport: (file: File) => Promise<number>;
 }) {
   const [filter, setFilter] = useState("");
-  const [edits, setEdits] = useState<Record<string, { cost: string; price: string }>>({});
+  const [edits, setEdits] = useState<Record<string, Record<string, string>>>({});
   const [savedItem, setSavedItem] = useState("");
   const [importMsg, setImportMsg] = useState("");
   const [importing, setImporting] = useState(false);
@@ -1193,27 +1215,31 @@ function ProductPricing({ items, productMap, onSave, onImport }: {
   const filtered = items.filter((r) => r.item.toLowerCase().includes(filter.toLowerCase()));
   const shown = filtered.slice(0, 200);
 
-  function val(item: string, field: "cost" | "price"): string {
+  function val(item: string, field: PriceField): string {
     if (edits[item] && edits[item][field] !== undefined) return edits[item][field];
     const p = productMap.get(item);
-    const n = p ? p[field] : undefined;
-    return n === undefined || n === 0 ? "" : String(n);
+    if (!p) return "";
+    const n = field === "cost" ? p.cost : field === "price" ? p.price : field === "min" ? p.reorderMin : p.reorderMax;
+    return n == null || n === 0 ? "" : String(n);
   }
-  function onEdit(item: string, field: "cost" | "price", v: string) {
-    setEdits((e) => ({ ...e, [item]: { cost: e[item]?.cost ?? "", price: e[item]?.price ?? "", [field]: v } }));
+  function onEdit(item: string, field: PriceField, v: string) {
+    setEdits((e) => ({ ...e, [item]: { ...(e[item] || {}), [field]: v } }));
   }
   async function commit(item: string) {
     const cost = parseFloat(val(item, "cost")) || 0;
     const price = parseFloat(val(item, "price")) || 0;
-    await onSave(item, cost, price);
+    const minStr = val(item, "min").trim(), maxStr = val(item, "max").trim();
+    const reorderMin = minStr === "" ? null : (parseInt(minStr, 10) || 0);
+    const reorderMax = maxStr === "" ? null : (parseInt(maxStr, 10) || 0);
+    await onSave(item, cost, price, reorderMin, reorderMax);
     setSavedItem(item);
     setTimeout(() => setSavedItem((s) => (s === item ? "" : s)), 1200);
   }
 
   return (
     <div style={{ ...card, marginTop: 16 }}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>Product pricing</h2>
-      <p style={{ color: "#aab2bd", fontSize: 14 }}>Enter what each product costs you and what you sell it for, or import them all at once from a pricing export. These power the Revenue tab.</p>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>Product pricing & reorder levels</h2>
+      <p style={{ color: "#aab2bd", fontSize: 14 }}>Set cost and sales price (these power the Revenue tab), and override the reorder minimum / maximum if the uploaded value is out of date. A minimum drives the &quot;order now&quot; trigger; a maximum sets the suggested &quot;order up to&quot; quantity.</p>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12, paddingBottom: 14, borderBottom: "1px solid #333a44" }}>
         <label style={{ ...btnPrimary, opacity: importing ? 0.6 : 1 }}>
@@ -1236,26 +1262,42 @@ function ProductPricing({ items, productMap, onSave, onImport }: {
             <th style={th}>Item</th><th style={th}>Vendor</th>
             <th style={{ ...th, textAlign: "center" }}>Cost ($)</th>
             <th style={{ ...th, textAlign: "center" }}>Price ($)</th>
+            <th style={{ ...th, textAlign: "center" }}>Min</th>
+            <th style={{ ...th, textAlign: "center" }}>Max</th>
             <th style={{ ...th, width: 20 }}></th>
           </tr></thead>
           <tbody>
-            {shown.map((r) => (
+            {shown.map((r) => {
+              const upMin = uploadedMin.get(r.item);
+              return (
               <tr key={r.item} style={{ borderBottom: "1px solid #2a2f37" }}>
                 <td style={td}>{r.item}</td>
                 <td style={{ ...td, color: "#9aa3ad" }}>{r.vendor}</td>
                 <td style={{ ...td, textAlign: "center" }}>
                   <input type="number" min={0} step={0.01} value={val(r.item, "cost")}
                     onChange={(e) => onEdit(r.item, "cost", e.target.value)} onBlur={() => commit(r.item)}
-                    style={{ ...input, width: 80 }} />
+                    style={{ ...input, width: 76 }} />
                 </td>
                 <td style={{ ...td, textAlign: "center" }}>
                   <input type="number" min={0} step={0.01} value={val(r.item, "price")}
                     onChange={(e) => onEdit(r.item, "price", e.target.value)} onBlur={() => commit(r.item)}
-                    style={{ ...input, width: 80 }} />
+                    style={{ ...input, width: 76 }} />
+                </td>
+                <td style={{ ...td, textAlign: "center" }}>
+                  <input type="number" min={0} step={1} value={val(r.item, "min")}
+                    placeholder={upMin != null ? String(upMin) : ""}
+                    onChange={(e) => onEdit(r.item, "min", e.target.value)} onBlur={() => commit(r.item)}
+                    style={{ ...input, width: 60 }} />
+                </td>
+                <td style={{ ...td, textAlign: "center" }}>
+                  <input type="number" min={0} step={1} value={val(r.item, "max")}
+                    onChange={(e) => onEdit(r.item, "max", e.target.value)} onBlur={() => commit(r.item)}
+                    style={{ ...input, width: 60 }} />
                 </td>
                 <td style={{ ...td, color: "#34d399" }}>{savedItem === r.item ? "✓" : ""}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

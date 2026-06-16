@@ -121,6 +121,8 @@ export interface ProductRow {
   item: string;
   cost: number;
   price: number;
+  reorderMin?: number | null;
+  reorderMax?: number | null;
   updated_at?: string;
 }
 
@@ -128,25 +130,31 @@ export async function fetchProducts(): Promise<ProductRow[]> {
   // Page through so a large catalogue isn't clipped at the 1,000-row select cap.
   const PAGE = 1000;
   const all: ProductRow[] = [];
+  let cols = "item,cost,price,reorder_min,reorder_max,updated_at";
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from("products")
-      .select("item,cost,price,updated_at")
-      .order("item")
-      .range(from, from + PAGE - 1);
+    let { data, error } = await supabase.from("products").select(cols).order("item").range(from, from + PAGE - 1);
+    if (error && cols.includes("reorder_min")) {
+      cols = "item,cost,price,updated_at";
+      ({ data, error } = await supabase.from("products").select(cols).order("item").range(from, from + PAGE - 1));
+    }
     if (error) throw error;
     if (!data || data.length === 0) break;
-    all.push(...(data as ProductRow[]));
+    all.push(...(data as any[]).map((r) => ({ item: r.item, cost: r.cost, price: r.price, reorderMin: r.reorder_min ?? null, reorderMax: r.reorder_max ?? null, updated_at: r.updated_at })));
     if (data.length < PAGE) break;
   }
   return all;
 }
 
-export async function upsertProduct(item: string, cost: number, price: number) {
-  const { error } = await supabase
-    .from("products")
-    .upsert({ item, cost, price, updated_at: new Date().toISOString() }, { onConflict: "item" });
-  if (error) throw error;
+export async function upsertProduct(item: string, cost: number, price: number, reorderMin: number | null = null, reorderMax: number | null = null) {
+  const row: any = { item, cost, price, updated_at: new Date().toISOString() };
+  // Include reorder columns; retry without them if the migration hasn't run.
+  const { error } = await supabase.from("products").upsert({ ...row, reorder_min: reorderMin, reorder_max: reorderMax }, { onConflict: "item" });
+  if (error && /reorder_m|column/i.test(error.message)) {
+    const retry = await supabase.from("products").upsert(row, { onConflict: "item" });
+    if (retry.error) throw retry.error;
+  } else if (error) {
+    throw error;
+  }
 }
 
 // Remove a whole snapshot for a date: the inventory rows plus its import-log entry.

@@ -61,8 +61,13 @@ create table if not exists products (
   item        text primary key,
   cost        numeric not null default 0,
   price       numeric not null default 0,
+  reorder_min integer,
+  reorder_max integer,
   updated_at  timestamptz default now()
 );
+-- If upgrading an existing products table, add the reorder override columns:
+alter table products add column if not exists reorder_min integer;
+alter table products add column if not exists reorder_max integer;
 
 -- Seed the known vendors. Excluded = the ones that don't get scanned/ordered here.
 insert into vendors (name, lead_days, excluded) values
