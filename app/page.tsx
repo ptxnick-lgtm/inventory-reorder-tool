@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { parseCSVText, parseXLSX, parsePricingCSV, ParseResult } from "@/lib/parser";
 import { classify, inventoryChanges, ClassifiedItem, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
 import {
@@ -592,10 +592,23 @@ function RowMenu({ item, meta, onSave, reorder, onSaveReorder }: {
   const [tags, setTags] = useState("");
   const [minStr, setMinStr] = useState("");
   const [maxStr, setMaxStr] = useState("");
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<React.CSSProperties>({});
 
   const openEditor = () => {
     setStatus(meta?.status || ""); setNote(meta?.note || ""); setTags(meta?.tags || "");
     setMinStr(reorder?.min != null ? String(reorder.min) : ""); setMaxStr(reorder?.max != null ? String(reorder.max) : "");
+    // Position relative to the screen so the menu is never clipped by a table's
+    // scroll box; flip above the button when there isn't room below.
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const W = 270;
+      const left = Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8));
+      const p: React.CSSProperties = { position: "fixed", left, width: W, zIndex: 41 };
+      if (window.innerHeight - r.bottom < 360) p.bottom = window.innerHeight - r.top + 6;
+      else p.top = r.bottom + 6;
+      setPos(p);
+    }
     setOpen(true);
   };
   const save = () => {
@@ -617,12 +630,12 @@ function RowMenu({ item, meta, onSave, reorder, onSaveReorder }: {
 
   return (
     <div style={{ position: "relative", display: "inline-block" }}>
-      <button onClick={openEditor} aria-label={`Notes and tags for ${item}`}
+      <button ref={btnRef} onClick={openEditor} aria-label={`Notes and tags for ${item}`}
         style={{ background: "none", border: "none", color: (meta?.note || meta?.tags) ? ACCENT : "#7d8794", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}>⋯</button>
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 41, background: "#1e232b", border: "1px solid #333a44", borderRadius: 10, width: 270, padding: 12, boxShadow: "0 8px 24px rgba(0,0,0,.5)", textAlign: "left" }}>
+          <div style={{ ...pos, background: "#1e232b", border: "1px solid #333a44", borderRadius: 10, padding: 12, boxShadow: "0 8px 24px rgba(0,0,0,.5)", textAlign: "left", maxHeight: "85vh", overflowY: "auto" }}>
             <div style={{ fontSize: 11, color: "#7d8794", marginBottom: 5 }}>Status</div>
             <div style={{ display: "flex", gap: 5 }}>
               <button style={statusBtn("", "Active")} onClick={() => setStatus("")}>Active</button>
