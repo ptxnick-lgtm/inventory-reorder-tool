@@ -167,24 +167,24 @@ export async function upsertProducts(rows: ProductRow[]) {
   }
 }
 
-export interface ItemFlagRow { item: string; status: string; note: string; tags: string; }
+export interface ItemFlagRow { item: string; status: string; note: string; tags: string; group: string; }
 
 export async function fetchItemFlags(): Promise<ItemFlagRow[]> {
-  const { data, error } = await supabase.from("item_flags").select("item,status,note,tags");
+  const { data, error } = await supabase.from("item_flags").select("item,status,note,tags,group_name");
   if (error) throw error;
-  return ((data || []) as any[]).map((r) => ({ item: r.item, status: r.status || "", note: r.note || "", tags: r.tags || "" }));
+  return ((data || []) as any[]).map((r) => ({ item: r.item, status: r.status || "", note: r.note || "", tags: r.tags || "", group: r.group_name || "" }));
 }
 
-// Save an item's status/note/tags, or delete the row entirely if all are empty.
-export async function saveItemMeta(item: string, meta: { status: string; note: string; tags: string }) {
-  const empty = !meta.status && !meta.note.trim() && !meta.tags.trim();
+// Save an item's status/note/tags/group, or delete the row entirely if all are empty.
+export async function saveItemMeta(item: string, meta: { status: string; note: string; tags: string; group: string }) {
+  const empty = !meta.status && !meta.note.trim() && !meta.tags.trim() && !meta.group.trim();
   if (empty) {
     const { error } = await supabase.from("item_flags").delete().eq("item", item);
     if (error) throw error;
   } else {
     const { error } = await supabase
       .from("item_flags")
-      .upsert({ item, status: meta.status, note: meta.note.trim() || null, tags: meta.tags.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "item" });
+      .upsert({ item, status: meta.status, note: meta.note.trim() || null, tags: meta.tags.trim() || null, group_name: meta.group.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "item" });
     if (error) throw error;
   }
 }

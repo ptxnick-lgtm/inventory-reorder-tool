@@ -9,7 +9,7 @@ import {
   fetchItemFlags, saveItemMeta, VendorRow, ProductRow,
 } from "@/lib/supabase";
 
-type ItemMeta = { status: string; note: string; tags: string };
+type ItemMeta = { status: string; note: string; tags: string; group: string };
 const isHiddenStatus = (s: string) => s === "discontinued" || s === "one_time";
 import { exportSortedPdf } from "@/lib/exportPdf";
 
@@ -64,7 +64,7 @@ export default function Page() {
       // Products and item flags are optional (their tables may not exist yet).
       try { setProducts(await fetchProducts()); } catch { /* pricing not set up yet */ }
       let meta = new Map<string, ItemMeta>();
-      try { meta = new Map((await fetchItemFlags()).map((f) => [f.item, { status: f.status, note: f.note, tags: f.tags }])); setItemMeta(meta); } catch { /* flags not set up yet */ }
+      try { meta = new Map((await fetchItemFlags()).map((f) => [f.item, { status: f.status, note: f.note, tags: f.tags, group: f.group }])); setItemMeta(meta); } catch { /* flags not set up yet */ }
       const hidden = [...meta.entries()].filter(([, m]) => isHiddenStatus(m.status)).map(([i]) => i);
       if (d.length) { setActiveDate(d[d.length - 1]); await runClassify(d[d.length - 1], v, hidden); }
     } catch (e: any) {
@@ -93,8 +93,8 @@ export default function Page() {
 
   async function handleSaveMeta(item: string, meta: ItemMeta) {
     const next = new Map(itemMeta);
-    if (!meta.status && !meta.note.trim() && !meta.tags.trim()) next.delete(item);
-    else next.set(item, { status: meta.status, note: meta.note.trim(), tags: meta.tags.trim() });
+    if (!meta.status && !meta.note.trim() && !meta.tags.trim() && !meta.group.trim()) next.delete(item);
+    else next.set(item, { status: meta.status, note: meta.note.trim(), tags: meta.tags.trim(), group: meta.group.trim() });
     setItemMeta(next);
     const hidden = [...next.entries()].filter(([, m]) => isHiddenStatus(m.status)).map(([i]) => i);
     classifyFrom(allSnapshots, activeDate, vendors, hidden);
@@ -542,7 +542,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
       )}
       {view === "flagged" && <FlaggedTab itemMeta={itemMeta} catalogue={catalogue} onSaveMeta={onSaveMeta} />}
       {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
-      {view === "compare" && <CompareItems periodSales={periodSales} catalogue={catalogue} />}
+      {view === "compare" && <CompareItems periodSales={periodSales} catalogue={catalogue} itemMeta={itemMeta} onSaveMeta={onSaveMeta} />}
     </div>
   );
 }
@@ -560,7 +560,7 @@ function RowMenu({ item, meta, onSave }: { item: string; meta?: ItemMeta; onSave
     setStatus(meta?.status || ""); setNote(meta?.note || ""); setTags(meta?.tags || "");
     setOpen(true);
   };
-  const save = () => { onSave(item, { status, note, tags }); setOpen(false); };
+  const save = () => { onSave(item, { status, note, tags, group: meta?.group || "" }); setOpen(false); };
 
   const statusBtn = (val: string, label: string): React.CSSProperties => ({
     flex: 1, padding: "6px 4px", fontSize: 12, borderRadius: 6, cursor: "pointer",
@@ -653,7 +653,7 @@ function FlaggedTab({ itemMeta, catalogue, onSaveMeta }: {
                       <td style={{ ...td, color: "#e6c97a", fontSize: 13, fontStyle: r.note ? "italic" : "normal" }}>{r.note || "—"}</td>
                       <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
                         <RowMenu item={r.item} meta={r} onSave={onSaveMeta} />
-                        <button onClick={() => onSaveMeta(r.item, { status: "", note: "", tags: "" })} style={{ ...btnGhost, padding: "4px 10px", fontSize: 13, marginLeft: 4 }}>Clear</button>
+                        <button onClick={() => onSaveMeta(r.item, { status: "", note: "", tags: "", group: r.group || "" })} style={{ ...btnGhost, padding: "4px 10px", fontSize: 13, marginLeft: 4 }}>Clear</button>
                       </td>
                     </tr>
                   );
@@ -980,15 +980,27 @@ function baseName(item: string): string {
   return s;
 }
 
-function CompareItems({ periodSales, catalogue }: {
+function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
   periodSales: Period[];
   catalogue: { item: string; vendor: string }[];
+  itemMeta: Map<string, ItemMeta>;
+  onSaveMeta: (item: string, meta: ItemMeta) => void;
 }) {
   const [tf, setTf] = useState("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [activeGroup, setActiveGroup] = useState<{ base: string; vendor: string } | null>(null);
   const keyOf = (c: { item: string; vendor: string }) => c.item + "||" + c.vendor;
   const tfLabel = TIMEFRAMES.find(([v]) => v === tf)?.[1] || "All time";
+
+  // An item belongs to a group by its manual override, else its detected base name.
+  const groupLabel = (item: string) => (itemMeta.get(item)?.group || "").trim() || baseName(item);
+  // Persist an item into / out of a group (preserving its other flags).
+  const setGroup = (item: string, vendor: string, group: string) => {
+    const m = itemMeta.get(item);
+    onSaveMeta(item, { status: m?.status || "", note: m?.note || "", tags: m?.tags || "", group });
+    if (group) setSelected((prev) => (prev.includes(item + "||" + vendor) ? prev : [...prev, item + "||" + vendor]));
+  };
 
   // Sales per item over the selected timeframe (only recomputes on data/timeframe change).
   const sales = useMemo(() => {
@@ -1010,14 +1022,14 @@ function CompareItems({ periodSales, catalogue }: {
   const groupMembers = useMemo(() => {
     const m = new Map<string, { base: string; vendor: string; keys: string[] }>();
     for (const c of catalogue) {
-      const base = baseName(c.item);
+      const base = groupLabel(c.item);
       const gk = c.vendor + "::" + base.toLowerCase();
       const e = m.get(gk) || { base, vendor: c.vendor, keys: [] };
       e.keys.push(keyOf(c));
       m.set(gk, e);
     }
     return Array.from(m.values()).filter((g) => g.keys.length >= 2);
-  }, [catalogue]);
+  }, [catalogue, itemMeta]);
   const groups = useMemo(() =>
     groupMembers
       .map((g) => ({ ...g, units: g.keys.reduce((s, k) => s + (sales.get(k)?.units || 0), 0) }))
@@ -1026,7 +1038,7 @@ function CompareItems({ periodSales, catalogue }: {
 
   const q = query.trim().toLowerCase();
   const matches = q
-    ? catalogue.filter((c) => c.item.toLowerCase().includes(q) && !selected.includes(keyOf(c))).slice(0, 8)
+    ? catalogue.filter((c) => c.item.toLowerCase().includes(q) && !selected.includes(keyOf(c)) && (!activeGroup || c.vendor === activeGroup.vendor)).slice(0, 8)
     : [];
 
   const rows = selected.map((k) => {
@@ -1039,7 +1051,8 @@ function CompareItems({ periodSales, catalogue }: {
   const runnerUp = winner ? rows[1] : null;
 
   const add = (c: { item: string; vendor: string }) => {
-    setSelected((prev) => (prev.length >= 6 || prev.includes(keyOf(c)) ? prev : [...prev, keyOf(c)]));
+    if (activeGroup) setGroup(c.item, c.vendor, activeGroup.base);
+    else setSelected((prev) => (prev.length >= 6 || prev.includes(keyOf(c)) ? prev : [...prev, keyOf(c)]));
     setQuery("");
   };
 
@@ -1051,14 +1064,14 @@ function CompareItems({ periodSales, catalogue }: {
           {TIMEFRAMES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>
       </div>
-      <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 6 }}>Jump to a detected variant group, or search and add items by hand.</p>
+      <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 6 }}>Jump to a detected variant group, or search and add items by hand. Inside a group, search to permanently add a variant the system missed.</p>
 
       <div style={{ ...card, marginTop: 12 }}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         {groups.length > 0 && (
           <select
             value=""
-            onChange={(e) => { const g = groups[Number(e.target.value)]; if (g) { setSelected(g.keys.slice(0, 6)); setQuery(""); } }}
+            onChange={(e) => { const g = groups[Number(e.target.value)]; if (g) { setActiveGroup({ base: g.base, vendor: g.vendor }); setSelected(g.keys.slice(0, 10)); setQuery(""); } }}
             style={{ ...input, maxWidth: 360 }}
           >
             <option value="" disabled>Jump to a variant group… ({groups.length})</option>
@@ -1066,11 +1079,17 @@ function CompareItems({ periodSales, catalogue }: {
           </select>
         )}
         <input
-          type="text" placeholder="…or search items to add" value={query}
+          type="text" placeholder={activeGroup ? `Add a missing variant to “${activeGroup.base}”` : "…or search items to add"} value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{ ...input, flex: 1, minWidth: 200, maxWidth: 360 }}
         />
       </div>
+      {activeGroup && (
+        <div style={{ marginTop: 8, fontSize: 13, color: "#9cc4ff" }}>
+          Editing group <strong>{activeGroup.base}</strong> · {activeGroup.vendor} — searching adds the item to this group permanently.
+          <button onClick={() => { setActiveGroup(null); setSelected([]); }} style={{ ...btnGhost, padding: "2px 10px", fontSize: 12, marginLeft: 8 }}>Done</button>
+        </div>
+      )}
       {matches.length > 0 && (
         <div style={{ border: "1px solid #333a44", borderRadius: 8, marginTop: 6, maxWidth: 360, overflow: "hidden" }}>
           {matches.map((c) => (
@@ -1113,9 +1132,13 @@ function CompareItems({ periodSales, catalogue }: {
                     <td style={{ ...td, textAlign: "center", fontWeight: 600 }}>{r.units}</td>
                     <td style={{ ...td, textAlign: "right" }}>{money(r.revenue)}</td>
                     <td style={{ ...td, textAlign: "right" }}>{money(r.profit)}</td>
-                    <td style={{ ...td, textAlign: "center" }}>
+                    <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
+                      {activeGroup && (itemMeta.get(r.item)?.group || "").trim().toLowerCase() === activeGroup.base.toLowerCase() && (
+                        <button onClick={() => { setGroup(r.item, r.vendor, ""); setSelected((prev) => prev.filter((k) => k !== r.key)); }}
+                          style={{ ...btnGhost, padding: "2px 8px", fontSize: 12, marginRight: 4 }}>Remove from group</button>
+                      )}
                       <button onClick={() => setSelected((prev) => prev.filter((k) => k !== r.key))}
-                        aria-label={`Remove ${r.item}`}
+                        aria-label={`Remove ${r.item} from comparison`}
                         style={{ background: "none", border: "none", color: "#7d8794", cursor: "pointer", fontSize: 16 }}>×</button>
                     </td>
                   </tr>

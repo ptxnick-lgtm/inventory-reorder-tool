@@ -50,9 +50,10 @@ create table if not exists item_flags (
   tags        text,
   updated_at  timestamptz default now()
 );
--- If upgrading an existing item_flags table, add the note/tags columns:
+-- If upgrading an existing item_flags table, add the note/tags/group columns:
 alter table item_flags add column if not exists note text;
 alter table item_flags add column if not exists tags text;
+alter table item_flags add column if not exists group_name text;
 
 -- Per-product cost and sales price, entered by hand in the app. Drives the
 -- revenue dashboard (units sold x price/cost between snapshots).
