@@ -170,6 +170,12 @@ export default function Page() {
     catch (e: any) { setError("Couldn't save that change: " + e.message); }
   }
 
+  // Save just the reorder min/max for an item, preserving its existing cost/price.
+  async function saveReorder(item: string, reorderMin: number | null, reorderMax: number | null) {
+    const p = products.find((x) => x.item === item);
+    await saveProduct(item, p?.cost ?? 0, p?.price ?? 0, reorderMin, reorderMax);
+  }
+
   // The reorder minimum as it arrived in the latest upload, shown as a hint in the editor.
   const uploadedMin = useMemo(() => {
     const m = new Map<string, number>();
@@ -340,6 +346,8 @@ export default function Page() {
           catalogue={catalogueItems}
           itemMeta={itemMeta}
           onSaveMeta={handleSaveMeta}
+          uploadedMin={uploadedMin}
+          onSaveReorder={saveReorder}
           activeDate={activeDate}
           importedDates={importedDates}
           onPickDate={(d) => { setActiveDate(d); classifyFrom(allSnapshots, d, vendors); }}
@@ -426,6 +434,8 @@ interface DashboardProps {
   catalogue: { item: string; vendor: string }[];
   itemMeta: Map<string, ItemMeta>;
   onSaveMeta: (item: string, meta: ItemMeta) => void;
+  uploadedMin: Map<string, number>;
+  onSaveReorder: (item: string, min: number | null, max: number | null) => void;
   activeDate: string;
   importedDates: string[];
   onPickDate: (d: string) => void | Promise<void>;
@@ -437,7 +447,7 @@ interface DashboardProps {
 
 type View = "list" | "flagged" | "revenue" | "compare";
 
-function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, onSaveMeta, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
+function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, onSaveMeta, uploadedMin, onSaveReorder, activeDate, importedDates, onPickDate, tierCounts, onExport, onNewUpload, onDeleteSnapshot }: DashboardProps) {
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
@@ -556,10 +566,10 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
               {activeTags.size > 0 && <button onClick={() => setActiveTags(new Set())} style={{ ...btnGhost, padding: "3px 11px", fontSize: 12 }}>Clear</button>}
             </div>
           )}
-          {openTier && <TierTable items={tierItems(openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} />}
+          {openTier && <TierTable items={tierItems(openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} productMap={productMap} uploadedMin={uploadedMin} onSaveReorder={onSaveReorder} />}
         </>
       )}
-      {view === "flagged" && <FlaggedTab itemMeta={itemMeta} catalogue={catalogue} onSaveMeta={onSaveMeta} />}
+      {view === "flagged" && <FlaggedTab itemMeta={itemMeta} catalogue={catalogue} onSaveMeta={onSaveMeta} productMap={productMap} uploadedMin={uploadedMin} onSaveReorder={onSaveReorder} />}
       {view === "revenue" && <RevenueTab classified={classified} productMap={productMap} periodSales={periodSales} />}
       {view === "compare" && <CompareItems periodSales={periodSales} catalogue={catalogue} itemMeta={itemMeta} onSaveMeta={onSaveMeta} />}
     </div>
@@ -568,18 +578,35 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
 
 const FLAG_LABELS: Record<string, string> = { discontinued: "Discontinued", one_time: "One-time buy" };
 
-// Per-row ⋯ editor: add a note, custom tags, and/or hide the item from reorder.
-function RowMenu({ item, meta, onSave }: { item: string; meta?: ItemMeta; onSave: (item: string, meta: ItemMeta) => void }) {
+// Per-row ⋯ editor: status, note, custom tags, and reorder min/max.
+function RowMenu({ item, meta, onSave, reorder, onSaveReorder }: {
+  item: string;
+  meta?: ItemMeta;
+  onSave: (item: string, meta: ItemMeta) => void;
+  reorder?: { min: number | null; max: number | null; uploadedMin?: number };
+  onSaveReorder?: (item: string, min: number | null, max: number | null) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [note, setNote] = useState("");
   const [tags, setTags] = useState("");
+  const [minStr, setMinStr] = useState("");
+  const [maxStr, setMaxStr] = useState("");
 
   const openEditor = () => {
     setStatus(meta?.status || ""); setNote(meta?.note || ""); setTags(meta?.tags || "");
+    setMinStr(reorder?.min != null ? String(reorder.min) : ""); setMaxStr(reorder?.max != null ? String(reorder.max) : "");
     setOpen(true);
   };
-  const save = () => { onSave(item, { status, note, tags, group: meta?.group || "" }); setOpen(false); };
+  const save = () => {
+    onSave(item, { status, note, tags, group: meta?.group || "" });
+    if (onSaveReorder) {
+      const min = minStr.trim() === "" ? null : (parseInt(minStr, 10) || 0);
+      const max = maxStr.trim() === "" ? null : (parseInt(maxStr, 10) || 0);
+      onSaveReorder(item, min, max);
+    }
+    setOpen(false);
+  };
 
   const statusBtn = (val: string, label: string): React.CSSProperties => ({
     flex: 1, padding: "6px 4px", fontSize: 12, borderRadius: 6, cursor: "pointer",
@@ -609,6 +636,21 @@ function RowMenu({ item, meta, onSave }: { item: string; meta?: ItemMeta; onSave
             <div style={{ fontSize: 11, color: "#7d8794", margin: "10px 0 4px" }}>Tags (comma-separated)</div>
             <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="seasonal, special order"
               style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+            {onSaveReorder && (
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#7d8794", marginBottom: 4 }}>Reorder min</div>
+                  <input type="number" min={0} step={1} value={minStr} onChange={(e) => setMinStr(e.target.value)}
+                    placeholder={reorder?.uploadedMin != null ? String(reorder.uploadedMin) : ""}
+                    style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#7d8794", marginBottom: 4 }}>Max (order up to)</div>
+                  <input type="number" min={0} step={1} value={maxStr} onChange={(e) => setMaxStr(e.target.value)}
+                    style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button onClick={save} style={{ ...btnPrimary, flex: 1, padding: "7px 0" }}>Save</button>
               <button onClick={() => setOpen(false)} style={{ ...btnGhost, padding: "7px 12px" }}>Cancel</button>
@@ -625,10 +667,13 @@ function RowMenu({ item, meta, onSave }: { item: string; meta?: ItemMeta; onSave
 
 // Dedicated tab listing every flagged item (discontinued, one-time, or just
 // annotated with a note/tags), with inline editing and clearing.
-function FlaggedTab({ itemMeta, catalogue, onSaveMeta }: {
+function FlaggedTab({ itemMeta, catalogue, onSaveMeta, productMap, uploadedMin, onSaveReorder }: {
   itemMeta: Map<string, ItemMeta>;
   catalogue: { item: string; vendor: string }[];
   onSaveMeta: (item: string, meta: ItemMeta) => void;
+  productMap: Map<string, ProductRow>;
+  uploadedMin: Map<string, number>;
+  onSaveReorder: (item: string, min: number | null, max: number | null) => void;
 }) {
   const vendorOf = useMemo(() => new Map(catalogue.map((c) => [c.item, c.vendor])), [catalogue]);
   const rows = useMemo(() =>
@@ -671,7 +716,9 @@ function FlaggedTab({ itemMeta, catalogue, onSaveMeta }: {
                       </td>
                       <td style={{ ...td, color: "#e6c97a", fontSize: 13, fontStyle: r.note ? "italic" : "normal" }}>{r.note || "—"}</td>
                       <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                        <RowMenu item={r.item} meta={r} onSave={onSaveMeta} />
+                        <RowMenu item={r.item} meta={r} onSave={onSaveMeta}
+                          reorder={{ min: productMap.get(r.item)?.reorderMin ?? null, max: productMap.get(r.item)?.reorderMax ?? null, uploadedMin: uploadedMin.get(r.item) }}
+                          onSaveReorder={onSaveReorder} />
                         <button onClick={() => onSaveMeta(r.item, { status: "", note: "", tags: "", group: r.group || "" })} style={{ ...btnGhost, padding: "4px 10px", fontSize: 13, marginLeft: 4 }}>Clear</button>
                       </td>
                     </tr>
@@ -688,7 +735,7 @@ function FlaggedTab({ itemMeta, catalogue, onSaveMeta }: {
 
 const cartKey = (i: { item: string; vendor: string }) => i.item + "||" + i.vendor;
 
-function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta }: {
+function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta, productMap, uploadedMin, onSaveReorder }: {
   items: ClassifiedItem[];
   tier: Tier;
   cart: Set<string>;
@@ -696,6 +743,9 @@ function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta 
   onClear: (keys: string[]) => void;
   itemMeta: Map<string, ItemMeta>;
   onSaveMeta: (item: string, meta: ItemMeta) => void;
+  productMap: Map<string, ProductRow>;
+  uploadedMin: Map<string, number>;
+  onSaveReorder: (item: string, min: number | null, max: number | null) => void;
 }) {
   const sorted = [...items].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.item.localeCompare(b.item));
   const checkedHere = sorted.filter((i) => cart.has(cartKey(i))).map(cartKey);
@@ -755,7 +805,9 @@ function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta 
                         style={{ width: 17, height: 17, accentColor: ACCENT, cursor: "pointer" }} />
                     </td>
                     <td style={{ ...td, textAlign: "center" }}>
-                      <RowMenu item={i.item} meta={m} onSave={onSaveMeta} />
+                      <RowMenu item={i.item} meta={m} onSave={onSaveMeta}
+                        reorder={{ min: productMap.get(i.item)?.reorderMin ?? null, max: productMap.get(i.item)?.reorderMax ?? null, uploadedMin: uploadedMin.get(i.item) }}
+                        onSaveReorder={onSaveReorder} />
                     </td>
                   </tr>
                 );
