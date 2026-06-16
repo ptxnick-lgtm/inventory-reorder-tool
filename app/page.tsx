@@ -990,6 +990,7 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [activeGroup, setActiveGroup] = useState<{ base: string; vendor: string } | null>(null);
+  const [editMode, setEditMode] = useState(false);
   const keyOf = (c: { item: string; vendor: string }) => c.item + "||" + c.vendor;
   const tfLabel = TIMEFRAMES.find(([v]) => v === tf)?.[1] || "All time";
 
@@ -1038,7 +1039,7 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
 
   const q = query.trim().toLowerCase();
   const matches = q
-    ? catalogue.filter((c) => c.item.toLowerCase().includes(q) && !selected.includes(keyOf(c)) && (!activeGroup || c.vendor === activeGroup.vendor)).slice(0, 8)
+    ? catalogue.filter((c) => c.item.toLowerCase().includes(q) && !selected.includes(keyOf(c)) && (!(activeGroup && editMode) || c.vendor === activeGroup.vendor)).slice(0, 8)
     : [];
 
   const rows = selected.map((k) => {
@@ -1051,8 +1052,8 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
   const runnerUp = winner ? rows[1] : null;
 
   const add = (c: { item: string; vendor: string }) => {
-    if (activeGroup) setGroup(c.item, c.vendor, activeGroup.base);
-    else setSelected((prev) => (prev.length >= 6 || prev.includes(keyOf(c)) ? prev : [...prev, keyOf(c)]));
+    if (activeGroup && editMode) setGroup(c.item, c.vendor, activeGroup.base);
+    else setSelected((prev) => (prev.length >= 8 || prev.includes(keyOf(c)) ? prev : [...prev, keyOf(c)]));
     setQuery("");
   };
 
@@ -1071,23 +1072,33 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
         {groups.length > 0 && (
           <select
             value=""
-            onChange={(e) => { const g = groups[Number(e.target.value)]; if (g) { setActiveGroup({ base: g.base, vendor: g.vendor }); setSelected(g.keys.slice(0, 10)); setQuery(""); } }}
+            onChange={(e) => { const g = groups[Number(e.target.value)]; if (g) { setActiveGroup({ base: g.base, vendor: g.vendor }); setEditMode(false); setSelected(g.keys.slice(0, 10)); setQuery(""); } }}
             style={{ ...input, maxWidth: 360 }}
           >
             <option value="" disabled>Jump to a variant group… ({groups.length})</option>
             {groups.map((g, i) => <option key={i} value={i}>{g.base} · {g.vendor} ({g.keys.length})</option>)}
           </select>
         )}
+        {activeGroup && (
+          <button
+            onClick={() => setEditMode((e) => !e)}
+            style={editMode ? { ...btnPrimary, padding: "8px 14px" } : { ...btnGhost, padding: "8px 14px" }}
+          >
+            {editMode ? "Done editing" : "Edit group"}
+          </button>
+        )}
         <input
-          type="text" placeholder={activeGroup ? `Add a missing variant to “${activeGroup.base}”` : "…or search items to add"} value={query}
+          type="text" placeholder={activeGroup && editMode ? `Add a missing variant to “${activeGroup.base}”` : "…or search items to add"} value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ ...input, flex: 1, minWidth: 200, maxWidth: 360 }}
+          style={{ ...input, flex: 1, minWidth: 180, maxWidth: 360 }}
         />
       </div>
       {activeGroup && (
         <div style={{ marginTop: 8, fontSize: 13, color: "#9cc4ff" }}>
-          Editing group <strong>{activeGroup.base}</strong> · {activeGroup.vendor} — searching adds the item to this group permanently.
-          <button onClick={() => { setActiveGroup(null); setSelected([]); }} style={{ ...btnGhost, padding: "2px 10px", fontSize: 12, marginLeft: 8 }}>Done</button>
+          {editMode
+            ? <>Editing <strong>{activeGroup.base}</strong> · {activeGroup.vendor} — search above to add a missing variant; it&apos;s saved to the group permanently.</>
+            : <>Viewing group <strong>{activeGroup.base}</strong> · {activeGroup.vendor}. Tap <strong>Edit group</strong> to add a variant the system missed.</>}
+          <button onClick={() => { setActiveGroup(null); setEditMode(false); setSelected([]); }} style={{ ...btnGhost, padding: "2px 10px", fontSize: 12, marginLeft: 8 }}>Clear</button>
         </div>
       )}
       {matches.length > 0 && (
@@ -1133,7 +1144,7 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
                     <td style={{ ...td, textAlign: "right" }}>{money(r.revenue)}</td>
                     <td style={{ ...td, textAlign: "right" }}>{money(r.profit)}</td>
                     <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                      {activeGroup && (itemMeta.get(r.item)?.group || "").trim().toLowerCase() === activeGroup.base.toLowerCase() && (
+                      {activeGroup && editMode && (itemMeta.get(r.item)?.group || "").trim().toLowerCase() === activeGroup.base.toLowerCase() && (
                         <button onClick={() => { setGroup(r.item, r.vendor, ""); setSelected((prev) => prev.filter((k) => k !== r.key)); }}
                           style={{ ...btnGhost, padding: "2px 8px", fontSize: 12, marginRight: 4 }}>Remove from group</button>
                       )}
