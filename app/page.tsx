@@ -771,7 +771,7 @@ function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta,
   uploadedMin: Map<string, number>;
   onSaveReorder: (item: string, min: number | null, max: number | null) => void;
 }) {
-  const sorted = [...items].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.item.localeCompare(b.item));
+  const sorted = [...items].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.item.localeCompare(b.item, undefined, { sensitivity: "base", numeric: true }));
   const checkedHere = sorted.filter((i) => cart.has(cartKey(i))).map(cartKey);
   return (
     <div style={{ ...card, marginTop: 16 }}>
@@ -861,7 +861,7 @@ function VendorView({ items, cart, onToggle, onClear, itemMeta, onSaveMeta, prod
   for (const i of items) { const a = byVendor.get(i.vendor) || []; a.push(i); byVendor.set(i.vendor, a); }
   const vendors = Array.from(byVendor.entries()).map(([vendor, its]) => ({
     vendor,
-    items: [...its].sort((a, b) => TIER_META[a.tier].order - TIER_META[b.tier].order || a.item.localeCompare(b.item)),
+    items: [...its].sort((a, b) => TIER_META[a.tier].order - TIER_META[b.tier].order || a.item.localeCompare(b.item, undefined, { sensitivity: "base", numeric: true })),
     minOrder: Math.min(...its.map((i) => TIER_META[i.tier].order)),
   })).sort((a, b) => a.minOrder - b.minOrder || a.vendor.localeCompare(b.vendor));
 
