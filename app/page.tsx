@@ -451,6 +451,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
   const tiers: Tier[] = ["order_now", "order_soon", "chronic_low", "already_ordered"];
   const [openTier, setOpenTier] = useState<Tier | null>("order_now");
   const [view, setView] = useState<View>("list");
+  const [listMode, setListMode] = useState<"priority" | "vendor">("priority");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
 
@@ -461,11 +462,10 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [classified, itemMeta]);
   const toggleTag = (t: string) => setActiveTags((prev) => { const n = new Set(prev); n.has(t) ? n.delete(t) : n.add(t); return n; });
-  const tierItems = (t: Tier) => {
-    const base = classified.filter((i) => i.tier === t);
-    if (activeTags.size === 0) return base;
-    return base.filter((i) => itemTags(i.item).some((tag) => activeTags.has(tag)));
-  };
+  const passesTags = (item: string) => activeTags.size === 0 || itemTags(item).some((tag) => activeTags.has(tag));
+  const tierItems = (t: Tier) => classified.filter((i) => i.tier === t && passesTags(i.item));
+  // Everything that needs attention (all tiers except "ok"), for the by-vendor view.
+  const vendorItems = classified.filter((i) => i.tier !== "ok" && passesTags(i.item));
 
   // "In cart" checkboxes — persisted locally so progress survives refresh/tab switches.
   const [cart, setCart] = useState<Set<string>>(new Set());
@@ -551,8 +551,17 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
               </div>
             ))}
           </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 16, alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: "#7d8794", marginRight: 4 }}>View:</span>
+            {([["priority", "By priority"], ["vendor", "By vendor"]] as const).map(([m, label]) => (
+              <button key={m} onClick={() => setListMode(m)}
+                style={{ fontSize: 13, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${listMode === m ? ACCENT : "#3a414c"}`, background: listMode === m ? "rgba(91,155,255,.18)" : "transparent", color: listMode === m ? "#cfe0ff" : "#aab2bd" }}>
+                {label}
+              </button>
+            ))}
+          </div>
           {allTags.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 12 }}>
               <span style={{ fontSize: 13, color: "#7d8794" }}>Filter by tag:</span>
               {allTags.map((t) => {
                 const on = activeTags.has(t);
@@ -566,7 +575,9 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
               {activeTags.size > 0 && <button onClick={() => setActiveTags(new Set())} style={{ ...btnGhost, padding: "3px 11px", fontSize: 12 }}>Clear</button>}
             </div>
           )}
-          {openTier && <TierTable items={tierItems(openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} productMap={productMap} uploadedMin={uploadedMin} onSaveReorder={onSaveReorder} />}
+          {listMode === "priority"
+            ? (openTier && <TierTable items={tierItems(openTier)} tier={openTier} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} productMap={productMap} uploadedMin={uploadedMin} onSaveReorder={onSaveReorder} />)
+            : <VendorView items={vendorItems} cart={cart} onToggle={toggleCart} onClear={clearCart} itemMeta={itemMeta} onSaveMeta={onSaveMeta} productMap={productMap} uploadedMin={uploadedMin} onSaveReorder={onSaveReorder} />}
         </>
       )}
       {view === "flagged" && <FlaggedTab itemMeta={itemMeta} catalogue={catalogue} onSaveMeta={onSaveMeta} productMap={productMap} uploadedMin={uploadedMin} onSaveReorder={onSaveReorder} />}
@@ -829,6 +840,95 @@ function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta,
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// Reorder list grouped by vendor — one priority-ordered, colour-coded list per
+// vendor (instead of separate tier tables), matching how orders are placed.
+function VendorView({ items, cart, onToggle, onClear, itemMeta, onSaveMeta, productMap, uploadedMin, onSaveReorder }: {
+  items: ClassifiedItem[];
+  cart: Set<string>;
+  onToggle: (key: string) => void;
+  onClear: (keys: string[]) => void;
+  itemMeta: Map<string, ItemMeta>;
+  onSaveMeta: (item: string, meta: ItemMeta) => void;
+  productMap: Map<string, ProductRow>;
+  uploadedMin: Map<string, number>;
+  onSaveReorder: (item: string, min: number | null, max: number | null) => void;
+}) {
+  const byVendor = new Map<string, ClassifiedItem[]>();
+  for (const i of items) { const a = byVendor.get(i.vendor) || []; a.push(i); byVendor.set(i.vendor, a); }
+  const vendors = Array.from(byVendor.entries()).map(([vendor, its]) => ({
+    vendor,
+    items: [...its].sort((a, b) => TIER_META[a.tier].order - TIER_META[b.tier].order || a.item.localeCompare(b.item)),
+    minOrder: Math.min(...its.map((i) => TIER_META[i.tier].order)),
+  })).sort((a, b) => a.minOrder - b.minOrder || a.vendor.localeCompare(b.vendor));
+
+  if (vendors.length === 0) return <div style={{ ...card, marginTop: 16, color: "#9aa3ad" }}>Nothing to reorder right now.</div>;
+
+  return (
+    <div>
+      {vendors.map((v) => {
+        const checkedHere = v.items.filter((i) => cart.has(cartKey(i))).map(cartKey);
+        return (
+          <div key={v.vendor} style={{ ...card, marginTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>{v.vendor} <span style={{ color: "#7d8794", fontWeight: 400, fontSize: 13 }}>· {v.items.length} to order</span></h3>
+              {checkedHere.length > 0 && <button onClick={() => onClear(checkedHere)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 13 }}>Clear cart ({checkedHere.length})</button>}
+            </div>
+            <div style={{ overflowX: "auto", marginTop: 8 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+                  <th style={th}>Priority / item</th>
+                  <th style={{ ...th, textAlign: "center" }}>On hand</th>
+                  <th style={{ ...th, textAlign: "center" }}>On order</th>
+                  <th style={{ ...th, textAlign: "center" }}>Order qty</th>
+                  <th style={th}>Note</th>
+                  <th style={{ ...th, textAlign: "center" }}>In cart</th>
+                  <th style={{ ...th, width: 28 }}></th>
+                </tr></thead>
+                <tbody>
+                  {v.items.map((i, idx) => {
+                    const key = cartKey(i);
+                    const inCart = cart.has(key);
+                    const m = itemMeta.get(i.item);
+                    const tagList = (m?.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+                    const color = TIER_META[i.tier].color;
+                    return (
+                      <tr key={idx} style={{ borderBottom: "1px solid #2a2f37", opacity: inCart ? 0.5 : 1 }}>
+                        <td style={{ ...td, borderLeft: `4px solid ${color}` }}>
+                          <span style={{ background: `${color}22`, color, fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 999, marginRight: 6 }}>{TIER_META[i.tier].label}</span>
+                          <span style={{ textDecoration: inCart ? "line-through" : "none" }}>{i.item}</span>
+                          {tagList.length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
+                              {tagList.map((t) => <span key={t} style={{ background: "#2a3340", color: "#9cc4ff", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>)}
+                            </div>
+                          )}
+                          {m?.note && <div style={{ color: "#e6c97a", fontSize: 12, fontStyle: "italic", marginTop: 3 }}>{m.note}</div>}
+                        </td>
+                        <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
+                        <td style={{ ...td, textAlign: "center" }}>{i.po}</td>
+                        <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? ACCENT : "#6b7480" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
+                        <td style={{ ...td, color: "#aab2bd", fontSize: 13 }}>{i.reason}</td>
+                        <td style={{ ...td, textAlign: "center" }}>
+                          <input type="checkbox" checked={inCart} onChange={() => onToggle(key)} aria-label={`Mark ${i.item} as added to cart`}
+                            style={{ width: 17, height: 17, accentColor: ACCENT, cursor: "pointer" }} />
+                        </td>
+                        <td style={{ ...td, textAlign: "center" }}>
+                          <RowMenu item={i.item} meta={m} onSave={onSaveMeta}
+                            reorder={{ min: productMap.get(i.item)?.reorderMin ?? null, max: productMap.get(i.item)?.reorderMax ?? null, uploadedMin: uploadedMin.get(i.item) }}
+                            onSaveReorder={onSaveReorder} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
