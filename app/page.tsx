@@ -253,7 +253,7 @@ export default function Page() {
     <PasswordGate>
     <main style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 600, margin: 0, color: "#e6e8eb" }}>
+        <h1 style={{ fontSize: 26, fontWeight: 600, margin: 0, color: "#1a202c" }}>
           Inventory Reorder Tool
         </h1>
         <div style={{ display: "flex", gap: 8 }}>
@@ -266,7 +266,7 @@ export default function Page() {
         </div>
       </div>
       <div style={{ height: 2, background: ACCENT, borderRadius: 2, margin: "10px 0 0", maxWidth: 160 }} />
-      <p style={{ color: "#aab2bd", marginTop: 10 }}>
+      <p style={{ color: "#555555", marginTop: 10 }}>
         Export your inventory from QuickBooks as CSV or Excel, drop it below, and get a sorted reorder list.
       </p>
 
@@ -281,14 +281,14 @@ export default function Page() {
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
-          style={{ ...dropZone, borderColor: dragOver ? ACCENT : "#3a414c", background: dragOver ? "#2a3340" : "#1e232b" }}
+          style={{ ...dropZone, borderColor: dragOver ? ACCENT : "#cbd5e0", background: dragOver ? "#e6f0fa" : "#ffffff" }}
         >
           {stage === "parsing" ? (
             <p>Reading {fileName}…</p>
           ) : (
             <>
               <p style={{ fontSize: 16, margin: 0 }}>Drag a CSV or Excel file here</p>
-              <p style={{ color: "#9aa3ad", margin: "8px 0 16px" }}>or</p>
+              <p style={{ color: "#777777", margin: "8px 0 16px" }}>or</p>
               <label style={btnPrimary}>
                 Choose file
                 <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }}
@@ -323,9 +323,9 @@ export default function Page() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
             <label>Snapshot date:</label>
             <input type="date" value={snapshotDate} onChange={(e) => setSnapshotDate(e.target.value)} style={input} />
-            {parseResult.detectedDate && <span style={{ color: "#9aa3ad", fontSize: 13 }}>(auto-detected from file)</span>}
+            {parseResult.detectedDate && <span style={{ color: "#777777", fontSize: 13 }}>(auto-detected from file)</span>}
           </div>
-          <p style={{ color: "#e6b450", fontSize: 13, margin: "8px 0 0" }}>
+          <p style={{ color: "#a0670a", fontSize: 13, margin: "8px 0 0" }}>
             Set this to the day the inventory was actually counted — not today — so past reports build the history correctly. Re-using a date replaces what&apos;s already saved for it.
           </p>
           <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
@@ -359,11 +359,11 @@ export default function Page() {
       )}
 
       {!classified && stage === "idle" && !error && (
-        <p style={{ color: "#9aa3ad", marginTop: 24 }}>No inventory uploaded yet. Drop your first file above to begin.</p>
+        <p style={{ color: "#777777", marginTop: 24 }}>No inventory uploaded yet. Drop your first file above to begin.</p>
       )}
 
-      <footer style={{ textAlign: "center", marginTop: 56, paddingTop: 16, borderTop: "1px solid #2a2f37" }}>
-        <span aria-hidden="true" style={{ color: "#5b6470", fontSize: 11, fontStyle: "italic", letterSpacing: 1 }}>
+      <footer style={{ textAlign: "center", marginTop: 56, paddingTop: 16, borderTop: "1px solid #f0f0f0" }}>
+        <span aria-hidden="true" style={{ color: "#bbbbbb", fontSize: 11, fontStyle: "italic", letterSpacing: 1 }}>
           ♥ love u mommy ♥
         </span>
       </footer>
@@ -378,12 +378,12 @@ function BootScreen({ pct }: { pct: number }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 340, textAlign: "center" }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 6px", color: "#e6e8eb" }}>Inventory Reorder Tool</h1>
-        <p style={{ color: "#aab2bd", fontSize: 14, marginTop: 0 }}>We are getting things ready for you…</p>
-        <div style={{ background: "#232932", borderRadius: 999, height: 8, overflow: "hidden", border: "1px solid #333a44" }}>
+        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 6px", color: "#1a202c" }}>Inventory Reorder Tool</h1>
+        <p style={{ color: "#555555", fontSize: 14, marginTop: 0 }}>We are getting things ready for you…</p>
+        <div style={{ background: "#f7fafc", borderRadius: 999, height: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
           <div style={{ width: `${Math.max(6, pct)}%`, background: ACCENT, height: "100%", borderRadius: 999, transition: "width .25s ease" }} />
         </div>
-        <p style={{ color: "#7d8794", fontSize: 12, marginTop: 8 }}>{pct > 0 ? `${pct}%` : "Connecting…"}</p>
+        <p style={{ color: "#888888", fontSize: 12, marginTop: 8 }}>{pct > 0 ? `${pct}%` : "Connecting…"}</p>
       </div>
     </div>
   );
@@ -412,15 +412,15 @@ function PasswordGate({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <form onSubmit={submit} style={{ ...card, marginTop: 0, width: "100%", maxWidth: 340, textAlign: "center" }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", color: "#e6e8eb" }}>Inventory Reorder Tool</h1>
-        <p style={{ color: "#aab2bd", fontSize: 14, marginTop: 0 }}>Enter the password to continue.</p>
+        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", color: "#1a202c" }}>Inventory Reorder Tool</h1>
+        <p style={{ color: "#555555", fontSize: 14, marginTop: 0 }}>Enter the password to continue.</p>
         <input
           type="password" autoFocus value={pw}
           onChange={(e) => { setPw(e.target.value); setErr(false); }}
           placeholder="Password"
           style={{ ...input, width: "100%", textAlign: "center", fontSize: 16, padding: "10px 12px", boxSizing: "border-box" }}
         />
-        {err && <p style={{ color: "#f0a3a3", fontSize: 13, margin: "10px 0 0" }}>Incorrect password.</p>}
+        {err && <p style={{ color: "#9b1c1c", fontSize: 13, margin: "10px 0 0" }}>Incorrect password.</p>}
         <button type="submit" style={{ ...btnPrimary, width: "100%", marginTop: 14 }}>Unlock</button>
       </form>
     </div>
@@ -497,7 +497,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
           {activeDate && (
             <button
               onClick={() => setConfirmDelete(true)}
-              style={{ ...btnGhost, color: "#f0a3a3", borderColor: "#5a2a2a" }}
+              style={{ ...btnGhost, color: "#9b1c1c", borderColor: "#f5c6c6" }}
             >
               Delete snapshot
             </button>
@@ -514,7 +514,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
           onConfirm={() => { setConfirmDelete(false); onDeleteSnapshot(activeDate); }}
         >
           <p style={{ margin: "0 0 10px" }}>
-            You&apos;re about to permanently remove the inventory uploaded for <strong style={{ color: "#e6e8eb" }}>{activeDate}</strong>.
+            You&apos;re about to permanently remove the inventory uploaded for <strong style={{ color: "#1a202c" }}>{activeDate}</strong>.
           </p>
           <p style={{ margin: 0 }}>
             This is worth a careful look first: the <strong>Revenue</strong> and <strong>Compare items</strong> tabs work by comparing days against each other — so removing this day can shift the sales and reorder numbers shown elsewhere. If you re-upload the same file later, the figures come back.
@@ -523,7 +523,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
       )}
 
       {/* View tabs */}
-      <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #333a44", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 4, marginTop: 20, borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
         {([["list", "Reorder list"], ["flagged", "Flagged"], ["revenue", "Revenue"], ["compare", "Compare items"]] as const).map(([key, label]) => (
           <button
             key={key}
@@ -531,7 +531,7 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
             style={{
               background: "none", border: "none", cursor: "pointer", fontSize: 15,
               padding: "10px 16px", marginBottom: -1,
-              color: view === key ? ACCENT : "#aab2bd",
+              color: view === key ? ACCENT : "#555555",
               fontWeight: view === key ? 600 : 400,
               borderBottom: view === key ? `2px solid ${ACCENT}` : "2px solid transparent",
             }}
@@ -547,27 +547,27 @@ function Dashboard({ classified, productMap, periodSales, catalogue, itemMeta, o
             {tiers.map((t) => (
               <div key={t} onClick={() => setOpenTier(t)} style={{ ...statCard, borderTop: `4px solid ${TIER_META[t].color}`, cursor: "pointer", opacity: openTier === t ? 1 : 0.85 }}>
                 <div style={{ fontSize: 28, fontWeight: 700 }}>{tierCounts(t)}</div>
-                <div style={{ color: "#aab2bd", fontSize: 14 }}>{TIER_META[t].label}</div>
+                <div style={{ color: "#555555", fontSize: 14 }}>{TIER_META[t].label}</div>
               </div>
             ))}
           </div>
           <div style={{ display: "flex", gap: 6, marginTop: 16, alignItems: "center" }}>
-            <span style={{ fontSize: 13, color: "#7d8794", marginRight: 4 }}>View:</span>
+            <span style={{ fontSize: 13, color: "#888888", marginRight: 4 }}>View:</span>
             {([["priority", "By priority"], ["vendor", "By vendor"]] as const).map(([m, label]) => (
               <button key={m} onClick={() => setListMode(m)}
-                style={{ fontSize: 13, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${listMode === m ? ACCENT : "#3a414c"}`, background: listMode === m ? "rgba(91,155,255,.18)" : "transparent", color: listMode === m ? "#cfe0ff" : "#aab2bd" }}>
+                style={{ fontSize: 13, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${listMode === m ? ACCENT : "#cbd5e0"}`, background: listMode === m ? "rgba(43,108,176,.12)" : "transparent", color: listMode === m ? "#1a4d8c" : "#555555" }}>
                 {label}
               </button>
             ))}
           </div>
           {allTags.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 12 }}>
-              <span style={{ fontSize: 13, color: "#7d8794" }}>Filter by tag:</span>
+              <span style={{ fontSize: 13, color: "#888888" }}>Filter by tag:</span>
               {allTags.map((t) => {
                 const on = activeTags.has(t);
                 return (
                   <button key={t} onClick={() => toggleTag(t)}
-                    style={{ fontSize: 12, padding: "3px 11px", borderRadius: 999, cursor: "pointer", border: `1px solid ${on ? ACCENT : "#3a414c"}`, background: on ? "rgba(91,155,255,.18)" : "transparent", color: on ? "#cfe0ff" : "#aab2bd" }}>
+                    style={{ fontSize: 12, padding: "3px 11px", borderRadius: 999, cursor: "pointer", border: `1px solid ${on ? ACCENT : "#cbd5e0"}`, background: on ? "rgba(43,108,176,.12)" : "transparent", color: on ? "#1a4d8c" : "#555555" }}>
                     {t}
                   </button>
                 );
@@ -634,42 +634,42 @@ function RowMenu({ item, meta, onSave, reorder, onSaveReorder }: {
 
   const statusBtn = (val: string, label: string): React.CSSProperties => ({
     flex: 1, padding: "6px 4px", fontSize: 12, borderRadius: 6, cursor: "pointer",
-    border: `1px solid ${status === val ? ACCENT : "#3a414c"}`,
-    background: status === val ? "rgba(91,155,255,.18)" : "transparent",
-    color: status === val ? "#cfe0ff" : "#aab2bd",
+    border: `1px solid ${status === val ? ACCENT : "#cbd5e0"}`,
+    background: status === val ? "rgba(43,108,176,.12)" : "transparent",
+    color: status === val ? "#1a4d8c" : "#555555",
   });
 
   return (
     <div style={{ position: "relative", display: "inline-block" }}>
       <button ref={btnRef} onClick={openEditor} aria-label={`Notes and tags for ${item}`}
-        style={{ background: "none", border: "none", color: (meta?.note || meta?.tags) ? ACCENT : "#7d8794", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}>⋯</button>
+        style={{ background: "none", border: "none", color: (meta?.note || meta?.tags) ? ACCENT : "#888888", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}>⋯</button>
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div style={{ ...pos, background: "#1e232b", border: "1px solid #333a44", borderRadius: 10, padding: 12, boxShadow: "0 8px 24px rgba(0,0,0,.5)", textAlign: "left", maxHeight: "85vh", overflowY: "auto" }}>
-            <div style={{ fontSize: 11, color: "#7d8794", marginBottom: 5 }}>Status</div>
+          <div style={{ ...pos, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, boxShadow: "0 8px 24px rgba(0,0,0,.18)", textAlign: "left", maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ fontSize: 11, color: "#888888", marginBottom: 5 }}>Status</div>
             <div style={{ display: "flex", gap: 5 }}>
               <button style={statusBtn("", "Active")} onClick={() => setStatus("")}>Active</button>
               <button style={statusBtn("discontinued", "Discontinued")} onClick={() => setStatus("discontinued")}>Discontinued</button>
               <button style={statusBtn("one_time", "One-time")} onClick={() => setStatus("one_time")}>One-time</button>
             </div>
-            <div style={{ fontSize: 11, color: "#7d8794", margin: "10px 0 4px" }}>Note (why / how to order)</div>
+            <div style={{ fontSize: 11, color: "#888888", margin: "10px 0 4px" }}>Note (why / how to order)</div>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
               placeholder="e.g. Order 2 — rep discounts at 2. Ask Dr. before restocking."
               style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
-            <div style={{ fontSize: 11, color: "#7d8794", margin: "10px 0 4px" }}>Tags (comma-separated)</div>
+            <div style={{ fontSize: 11, color: "#888888", margin: "10px 0 4px" }}>Tags (comma-separated)</div>
             <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="seasonal, special order"
               style={{ ...input, width: "100%", boxSizing: "border-box" }} />
             {onSaveReorder && (
               <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: "#7d8794", marginBottom: 4 }}>Reorder min</div>
+                  <div style={{ fontSize: 11, color: "#888888", marginBottom: 4 }}>Reorder min</div>
                   <input type="number" min={0} step={1} value={minStr} onChange={(e) => setMinStr(e.target.value)}
                     placeholder={reorder?.uploadedMin != null ? String(reorder.uploadedMin) : ""}
                     style={{ ...input, width: "100%", boxSizing: "border-box" }} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: "#7d8794", marginBottom: 4 }}>Max (order up to)</div>
+                  <div style={{ fontSize: 11, color: "#888888", marginBottom: 4 }}>Max (order up to)</div>
                   <input type="number" min={0} step={1} value={maxStr} onChange={(e) => setMaxStr(e.target.value)}
                     style={{ ...input, width: "100%", boxSizing: "border-box" }} />
                 </div>
@@ -680,7 +680,7 @@ function RowMenu({ item, meta, onSave, reorder, onSaveReorder }: {
               <button onClick={() => setOpen(false)} style={{ ...btnGhost, padding: "7px 12px" }}>Cancel</button>
             </div>
             {status === "discontinued" || status === "one_time"
-              ? <p style={{ color: "#7d8794", fontSize: 11, margin: "8px 0 0" }}>This item will be hidden from the reorder lists.</p>
+              ? <p style={{ color: "#888888", fontSize: 11, margin: "8px 0 0" }}>This item will be hidden from the reorder lists.</p>
               : null}
           </div>
         </>
@@ -711,15 +711,15 @@ function FlaggedTab({ itemMeta, catalogue, onSaveMeta, productMap, uploadedMin, 
     <div style={{ marginTop: 20 }}>
       <div style={{ ...card, marginTop: 0 }}>
         <h3 style={{ marginTop: 0, fontSize: 16 }}>Flagged items ({rows.length})</h3>
-        <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 0 }}>
+        <p style={{ color: "#777777", fontSize: 13, marginTop: 0 }}>
           Everything you&apos;ve marked or annotated. Discontinued and one-time items are hidden from the reorder lists; notes and tags also show on the list itself.
         </p>
         {rows.length === 0 ? (
-          <p style={{ color: "#7d8794", fontSize: 14, marginBottom: 0 }}>No flagged items yet. Use the ⋯ menu on any reorder-list row to add a note, tags, or mark it discontinued.</p>
+          <p style={{ color: "#888888", fontSize: 14, marginBottom: 0 }}>No flagged items yet. Use the ⋯ menu on any reorder-list row to add a note, tags, or mark it discontinued.</p>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #e2e8f0" }}>
                 <th style={th}>Item</th>
                 <th style={th}>Status</th>
                 <th style={th}>Tags</th>
@@ -730,15 +730,15 @@ function FlaggedTab({ itemMeta, catalogue, onSaveMeta, productMap, uploadedMin, 
                 {rows.map((r) => {
                   const tagList = (r.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
                   return (
-                    <tr key={r.item} style={{ borderBottom: "1px solid #2a2f37" }}>
-                      <td style={td}>{r.item}<div style={{ color: "#7d8794", fontSize: 12 }}>{r.vendor}</div></td>
-                      <td style={{ ...td, color: r.status ? "#e6c97a" : "#7d8794" }}>{r.status ? (FLAG_LABELS[r.status] || r.status) : "Active"}</td>
+                    <tr key={r.item} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                      <td style={td}>{r.item}<div style={{ color: "#888888", fontSize: 12 }}>{r.vendor}</div></td>
+                      <td style={{ ...td, color: r.status ? "#92591a" : "#888888" }}>{r.status ? (FLAG_LABELS[r.status] || r.status) : "Active"}</td>
                       <td style={td}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                          {tagList.map((t) => <span key={t} style={{ background: "#2a3340", color: "#9cc4ff", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>)}
+                          {tagList.map((t) => <span key={t} style={{ background: "#e6f0fa", color: "#2b6cb0", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>)}
                         </div>
                       </td>
-                      <td style={{ ...td, color: "#e6c97a", fontSize: 13, fontStyle: r.note ? "italic" : "normal" }}>{r.note || "—"}</td>
+                      <td style={{ ...td, color: "#92591a", fontSize: 13, fontStyle: r.note ? "italic" : "normal" }}>{r.note || "—"}</td>
                       <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
                         <RowMenu item={r.item} meta={r} onSave={onSaveMeta}
                           reorder={{ min: productMap.get(r.item)?.reorderMin ?? null, max: productMap.get(r.item)?.reorderMax ?? null, uploadedMin: uploadedMin.get(r.item) }}
@@ -783,11 +783,11 @@ function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta,
           </button>
         )}
       </div>
-      {sorted.length === 0 ? <p style={{ color: "#9aa3ad" }}>Nothing in this category.</p> : (
+      {sorted.length === 0 ? <p style={{ color: "#777777" }}>Nothing in this category.</p> : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+              <tr style={{ textAlign: "left", borderBottom: "2px solid #e2e8f0" }}>
                 <th style={th}>Vendor</th><th style={th}>Item</th>
                 <th style={{ ...th, textAlign: "center" }}>On hand</th>
                 <th style={{ ...th, textAlign: "center" }}>On order</th>
@@ -805,24 +805,24 @@ function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta,
                 const m = itemMeta.get(i.item);
                 const tagList = (m?.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
                 return (
-                  <tr key={idx} style={{ borderBottom: "1px solid #2a2f37", opacity: inCart ? 0.5 : 1 }}>
+                  <tr key={idx} style={{ borderBottom: "1px solid #f0f0f0", opacity: inCart ? 0.5 : 1 }}>
                     <td style={td}>{i.vendor}</td>
                     <td style={{ ...td, textDecoration: inCart ? "line-through" : "none" }}>
                       <div>{i.item}</div>
                       {tagList.length > 0 && (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
                           {tagList.map((t) => (
-                            <span key={t} style={{ background: "#2a3340", color: "#9cc4ff", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>
+                            <span key={t} style={{ background: "#e6f0fa", color: "#2b6cb0", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>
                           ))}
                         </div>
                       )}
-                      {m?.note && <div style={{ color: "#e6c97a", fontSize: 12, fontStyle: "italic", marginTop: 3 }}>{m.note}</div>}
+                      {m?.note && <div style={{ color: "#92591a", fontSize: 12, fontStyle: "italic", marginTop: 3 }}>{m.note}</div>}
                     </td>
                     <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
                     <td style={{ ...td, textAlign: "center" }}>{i.po}</td>
                     <td style={{ ...td, textAlign: "center" }}><Sparkline history={i.history} /></td>
-                    <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? ACCENT : "#6b7480" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
-                    <td style={{ ...td, color: "#aab2bd", fontSize: 13 }}>{i.reason}</td>
+                    <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? ACCENT : "#aaaaaa" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
+                    <td style={{ ...td, color: "#555555", fontSize: 13 }}>{i.reason}</td>
                     <td style={{ ...td, textAlign: "center" }}>
                       <input type="checkbox" checked={inCart} onChange={() => onToggle(key)}
                         aria-label={`Mark ${i.item} as added to cart`}
@@ -865,7 +865,7 @@ function VendorView({ items, cart, onToggle, onClear, itemMeta, onSaveMeta, prod
     minOrder: Math.min(...its.map((i) => TIER_META[i.tier].order)),
   })).sort((a, b) => a.minOrder - b.minOrder || a.vendor.localeCompare(b.vendor));
 
-  if (vendors.length === 0) return <div style={{ ...card, marginTop: 16, color: "#9aa3ad" }}>Nothing to reorder right now.</div>;
+  if (vendors.length === 0) return <div style={{ ...card, marginTop: 16, color: "#777777" }}>Nothing to reorder right now.</div>;
 
   return (
     <div>
@@ -874,12 +874,12 @@ function VendorView({ items, cart, onToggle, onClear, itemMeta, onSaveMeta, prod
         return (
           <div key={v.vendor} style={{ ...card, marginTop: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>{v.vendor} <span style={{ color: "#7d8794", fontWeight: 400, fontSize: 13 }}>· {v.items.length} to order</span></h3>
+              <h3 style={{ margin: 0, fontSize: 16 }}>{v.vendor} <span style={{ color: "#888888", fontWeight: 400, fontSize: 13 }}>· {v.items.length} to order</span></h3>
               {checkedHere.length > 0 && <button onClick={() => onClear(checkedHere)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 13 }}>Clear cart ({checkedHere.length})</button>}
             </div>
             <div style={{ overflowX: "auto", marginTop: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+                <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #e2e8f0" }}>
                   <th style={th}>Priority / item</th>
                   <th style={{ ...th, textAlign: "center" }}>On hand</th>
                   <th style={{ ...th, textAlign: "center" }}>On order</th>
@@ -896,21 +896,21 @@ function VendorView({ items, cart, onToggle, onClear, itemMeta, onSaveMeta, prod
                     const tagList = (m?.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
                     const color = TIER_META[i.tier].color;
                     return (
-                      <tr key={idx} style={{ borderBottom: "1px solid #2a2f37", opacity: inCart ? 0.5 : 1 }}>
+                      <tr key={idx} style={{ borderBottom: "1px solid #f0f0f0", opacity: inCart ? 0.5 : 1 }}>
                         <td style={{ ...td, borderLeft: `4px solid ${color}` }}>
                           <span style={{ background: `${color}22`, color, fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 999, marginRight: 6 }}>{TIER_META[i.tier].label}</span>
                           <span style={{ textDecoration: inCart ? "line-through" : "none" }}>{i.item}</span>
                           {tagList.length > 0 && (
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
-                              {tagList.map((t) => <span key={t} style={{ background: "#2a3340", color: "#9cc4ff", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>)}
+                              {tagList.map((t) => <span key={t} style={{ background: "#e6f0fa", color: "#2b6cb0", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>)}
                             </div>
                           )}
-                          {m?.note && <div style={{ color: "#e6c97a", fontSize: 12, fontStyle: "italic", marginTop: 3 }}>{m.note}</div>}
+                          {m?.note && <div style={{ color: "#92591a", fontSize: 12, fontStyle: "italic", marginTop: 3 }}>{m.note}</div>}
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>{i.qoh}</td>
                         <td style={{ ...td, textAlign: "center" }}>{i.po}</td>
-                        <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? ACCENT : "#6b7480" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
-                        <td style={{ ...td, color: "#aab2bd", fontSize: 13 }}>{i.reason}</td>
+                        <td style={{ ...td, textAlign: "center", fontWeight: 600, color: i.suggestedQty ? ACCENT : "#aaaaaa" }}>{i.suggestedQty ? i.suggestedQty : "—"}</td>
+                        <td style={{ ...td, color: "#555555", fontSize: 13 }}>{i.reason}</td>
                         <td style={{ ...td, textAlign: "center" }}>
                           <input type="checkbox" checked={inCart} onChange={() => onToggle(key)} aria-label={`Mark ${i.item} as added to cart`}
                             style={{ width: 17, height: 17, accentColor: ACCENT, cursor: "pointer" }} />
@@ -935,17 +935,17 @@ function VendorView({ items, cart, onToggle, onClear, itemMeta, onSaveMeta, prod
 
 function Kpi({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: string }) {
   return (
-    <div style={{ ...statCard, background: "#232932" }}>
-      <div style={{ color: "#aab2bd", fontSize: 13 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: accent || "#e6e8eb" }}>{value}</div>
-      <div style={{ color: "#7d8794", fontSize: 12 }}>{sub}</div>
+    <div style={{ ...statCard, background: "#f7fafc" }}>
+      <div style={{ color: "#555555", fontSize: 13 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: accent || "#1a202c" }}>{value}</div>
+      <div style={{ color: "#888888", fontSize: 12 }}>{sub}</div>
     </div>
   );
 }
 
 // Tiny per-item trend line for table cells.
 function Sparkline({ history }: { history: { qoh: number }[] }) {
-  if (history.length < 2) return <span style={{ color: "#5b6470", fontSize: 12 }}>—</span>;
+  if (history.length < 2) return <span style={{ color: "#bbbbbb", fontSize: 12 }}>—</span>;
   const W = 80, H = 20;
   const vals = history.map((h) => h.qoh);
   const max = Math.max(1, ...vals), min = Math.min(...vals);
@@ -956,7 +956,7 @@ function Sparkline({ history }: { history: { qoh: number }[] }) {
   const down = vals[vals.length - 1] < vals[0];
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
-      <polyline points={pts} fill="none" stroke={down ? "#E24B4A" : "#34d399"} strokeWidth={1.5} />
+      <polyline points={pts} fill="none" stroke={down ? "#E24B4A" : "#1d9e75"} strokeWidth={1.5} />
     </svg>
   );
 }
@@ -988,23 +988,23 @@ function MoneyTrend({ data }: { data: RevPoint[] }) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#aab2bd", margin: "4px 0 6px" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 2, background: "#34d399", display: "inline-block" }} />Revenue</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 0, borderTop: "2px dashed #5b9bff", display: "inline-block" }} />Profit</span>
+      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#555555", margin: "4px 0 6px" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 2, background: "#1d9e75", display: "inline-block" }} />Revenue</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 0, borderTop: "2px dashed #2b6cb0", display: "inline-block" }} />Profit</span>
       </div>
       <div style={{ position: "relative" }} onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Revenue and profit per snapshot over time">
-          <line x1={padX} y1={bottom} x2={W - padX} y2={bottom} stroke="#333a44" />
-          <text x={4} y={y(maxV) + 4} fontSize={11} fill="#7d8794">{money(maxV)}</text>
-          <text x={4} y={bottom + 4} fontSize={11} fill="#7d8794">$0</text>
-          {h && <line x1={x(hover!)} y1={padY - 6} x2={x(hover!)} y2={bottom} stroke="#5b6470" strokeDasharray="3 3" />}
-          <polyline points={proPts} fill="none" stroke="#5b9bff" strokeWidth={2} strokeDasharray="5 4" />
-          <polyline points={revPts} fill="none" stroke="#34d399" strokeWidth={2.5} />
+          <line x1={padX} y1={bottom} x2={W - padX} y2={bottom} stroke="#e2e8f0" />
+          <text x={4} y={y(maxV) + 4} fontSize={11} fill="#888888">{money(maxV)}</text>
+          <text x={4} y={bottom + 4} fontSize={11} fill="#888888">$0</text>
+          {h && <line x1={x(hover!)} y1={padY - 6} x2={x(hover!)} y2={bottom} stroke="#bbbbbb" strokeDasharray="3 3" />}
+          <polyline points={proPts} fill="none" stroke="#2b6cb0" strokeWidth={2} strokeDasharray="5 4" />
+          <polyline points={revPts} fill="none" stroke="#1d9e75" strokeWidth={2.5} />
           {data.map((d, i) => (
             <g key={d.date}>
-              <circle cx={x(i)} cy={y(d.profit)} r={hover === i ? 4 : 2.5} fill="#5b9bff" />
-              <circle cx={x(i)} cy={y(d.revenue)} r={hover === i ? 4.5 : 3} fill="#34d399" />
-              {i % labelEvery === 0 && <text x={x(i)} y={H - 4} fontSize={11} fill="#7d8794" textAnchor="middle">{d.date.slice(5)}</text>}
+              <circle cx={x(i)} cy={y(d.profit)} r={hover === i ? 4 : 2.5} fill="#2b6cb0" />
+              <circle cx={x(i)} cy={y(d.revenue)} r={hover === i ? 4.5 : 3} fill="#1d9e75" />
+              {i % labelEvery === 0 && <text x={x(i)} y={H - 4} fontSize={11} fill="#888888" textAnchor="middle">{d.date.slice(5)}</text>}
               <rect x={x(i) - colW / 2} y={0} width={colW} height={bottom} fill="transparent" onMouseEnter={() => setHover(i)} />
             </g>
           ))}
@@ -1012,12 +1012,12 @@ function MoneyTrend({ data }: { data: RevPoint[] }) {
         {h && (
           <div style={{
             position: "absolute", left: `${(x(hover!) / W) * 100}%`, top: `${(y(h.revenue) / H) * 100}%`,
-            transform: "translate(-50%, calc(-100% - 10px))", background: "#0f1217", border: "1px solid #3a414c",
-            borderRadius: 8, padding: "8px 10px", pointerEvents: "none", whiteSpace: "nowrap", fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.5)",
+            transform: "translate(-50%, calc(-100% - 10px))", background: "#ffffff", border: "1px solid #cbd5e0",
+            borderRadius: 8, padding: "8px 10px", pointerEvents: "none", whiteSpace: "nowrap", fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.18)",
           }}>
-            <div style={{ color: "#e6e8eb", fontWeight: 600, marginBottom: 3 }}>{h.date}</div>
-            <div style={{ color: "#34d399" }}>Revenue {money(h.revenue)}</div>
-            <div style={{ color: "#5b9bff" }}>Profit {money(h.profit)}</div>
+            <div style={{ color: "#1a202c", fontWeight: 600, marginBottom: 3 }}>{h.date}</div>
+            <div style={{ color: "#1d9e75" }}>Revenue {money(h.revenue)}</div>
+            <div style={{ color: "#2b6cb0" }}>Profit {money(h.profit)}</div>
           </div>
         )}
       </div>
@@ -1069,7 +1069,7 @@ function RevenueTab({ classified, productMap, periodSales }: { classified: Class
 
   return (
     <div style={{ marginTop: 20 }}>
-      <p style={{ color: "#7d8794", fontSize: 13, margin: "0 0 12px" }}>
+      <p style={{ color: "#888888", fontSize: 13, margin: "0 0 12px" }}>
         Pricing last updated: {fmtDate(pricingUpdatedAt(productMap))}
       </p>
       {missing > 0 && (
@@ -1079,7 +1079,7 @@ function RevenueTab({ classified, productMap, periodSales }: { classified: Class
       )}
 
       {!hasSales ? (
-        <div style={{ ...card, marginTop: 12, color: "#aab2bd" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
+        <div style={{ ...card, marginTop: 12, color: "#555555" }}>Upload a second day&apos;s file to see sales revenue. Inventory value below works with one snapshot.</div>
       ) : (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
@@ -1089,7 +1089,7 @@ function RevenueTab({ classified, productMap, periodSales }: { classified: Class
             </select>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 10 }}>
-            <Kpi label="Revenue" value={money(revenue)} sub="units sold × price" accent="#34d399" />
+            <Kpi label="Revenue" value={money(revenue)} sub="units sold × price" accent="#1d9e75" />
             <Kpi label="Gross profit" value={money(grossProfit)} sub="revenue − cost of goods" />
             <Kpi label="Margin" value={`${margin.toFixed(1)}%`} sub="profit ÷ revenue" />
             <Kpi label="Restock spend" value={money(restockCost)} sub="cost of stock received" />
@@ -1098,26 +1098,26 @@ function RevenueTab({ classified, productMap, periodSales }: { classified: Class
           <div style={{ ...card, marginTop: 20 }}>
             <h3 style={{ marginTop: 0, fontSize: 16 }}>Revenue over time</h3>
             {series.length < 2 ? (
-              <p style={{ color: "#9aa3ad", fontSize: 14, marginBottom: 0 }}>Not enough data in this range to chart — pick a wider timeframe or upload more snapshots.</p>
+              <p style={{ color: "#777777", fontSize: 14, marginBottom: 0 }}>Not enough data in this range to chart — pick a wider timeframe or upload more snapshots.</p>
             ) : (
               <MoneyTrend data={series} />
             )}
           </div>
 
           <div style={{ ...card, marginTop: 20 }}>
-            <h3 style={{ marginTop: 0, fontSize: 16 }}>Top sellers — {tfLabel} <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— by revenue</span></h3>
+            <h3 style={{ marginTop: 0, fontSize: 16 }}>Top sellers — {tfLabel} <span style={{ color: "#777777", fontWeight: 400, fontSize: 13 }}>— by revenue</span></h3>
             {topSellers.length === 0 ? (
-              <p style={{ color: "#9aa3ad", fontSize: 14 }}>No sales in this range, or no prices set yet.</p>
+              <p style={{ color: "#777777", fontSize: 14 }}>No sales in this range, or no prices set yet.</p>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+                <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #e2e8f0" }}>
                   <th style={th}>Item</th><th style={th}>Vendor</th>
                   <th style={{ ...th, textAlign: "center" }}>Units sold</th>
                   <th style={{ ...th, textAlign: "right" }}>Revenue</th>
                 </tr></thead>
                 <tbody>
                   {topSellers.map((s) => (
-                    <tr key={s.item + s.vendor} style={{ borderBottom: "1px solid #2a2f37" }}>
+                    <tr key={s.item + s.vendor} style={{ borderBottom: "1px solid #f0f0f0" }}>
                       <td style={td}>{s.item}</td>
                       <td style={td}>{s.vendor}</td>
                       <td style={{ ...td, textAlign: "center" }}>{s.units}</td>
@@ -1131,7 +1131,7 @@ function RevenueTab({ classified, productMap, periodSales }: { classified: Class
         </>
       )}
 
-      <p style={{ color: "#aab2bd", fontSize: 14, margin: "20px 0 0" }}>Current inventory value:</p>
+      <p style={{ color: "#555555", fontSize: 14, margin: "20px 0 0" }}>Current inventory value:</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 8 }}>
         <Kpi label="Value at cost" value={money(invCost)} sub="what it cost you" />
         <Kpi label="Retail value" value={money(invRetail)} sub="if it all sells" />
@@ -1244,12 +1244,12 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
   return (
     <div style={{ marginTop: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 16 }}>Compare items <span style={{ color: "#9aa3ad", fontWeight: 400, fontSize: 13 }}>— how variants stack up over {tfLabel}</span></h3>
+        <h3 style={{ margin: 0, fontSize: 16 }}>Compare items <span style={{ color: "#777777", fontWeight: 400, fontSize: 13 }}>— how variants stack up over {tfLabel}</span></h3>
         <select value={tf} onChange={(e) => setTf(e.target.value)} style={{ ...input, padding: "5px 8px" }}>
           {TIMEFRAMES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>
       </div>
-      <p style={{ color: "#9aa3ad", fontSize: 13, marginTop: 6 }}>Jump to a detected variant group, or search and add items by hand. Inside a group, search to permanently add a variant the system missed.</p>
+      <p style={{ color: "#777777", fontSize: 13, marginTop: 6 }}>Jump to a detected variant group, or search and add items by hand. Inside a group, search to permanently add a variant the system missed.</p>
 
       <div style={{ ...card, marginTop: 12 }}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -1278,7 +1278,7 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
         />
       </div>
       {activeGroup && (
-        <div style={{ marginTop: 8, fontSize: 13, color: "#9cc4ff" }}>
+        <div style={{ marginTop: 8, fontSize: 13, color: "#2b6cb0" }}>
           {editMode
             ? <>Editing <strong>{activeGroup.base}</strong> · {activeGroup.vendor} — search above to add a missing variant; it&apos;s saved to the group permanently.</>
             : <>Viewing group <strong>{activeGroup.base}</strong> · {activeGroup.vendor}. Tap <strong>Edit group</strong> to add a variant the system missed.</>}
@@ -1286,29 +1286,29 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
         </div>
       )}
       {matches.length > 0 && (
-        <div style={{ border: "1px solid #333a44", borderRadius: 8, marginTop: 6, maxWidth: 360, overflow: "hidden" }}>
+        <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, marginTop: 6, maxWidth: 360, overflow: "hidden" }}>
           {matches.map((c) => (
-            <div key={keyOf(c)} onClick={() => add(c)} style={{ padding: "8px 10px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #2a2f37" }}>
-              {c.item} <span style={{ color: "#7d8794" }}>· {c.vendor}</span>
+            <div key={keyOf(c)} onClick={() => add(c)} style={{ padding: "8px 10px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f0f0f0" }}>
+              {c.item} <span style={{ color: "#888888" }}>· {c.vendor}</span>
             </div>
           ))}
         </div>
       )}
 
       {selected.length === 0 ? (
-        <p style={{ color: "#7d8794", fontSize: 14, marginBottom: 0 }}>No items added yet — search above to start a comparison.</p>
+        <p style={{ color: "#888888", fontSize: 14, marginBottom: 0 }}>No items added yet — search above to start a comparison.</p>
       ) : (
         <>
           {winner && (
-            <div style={{ ...statCard, marginTop: 14, borderLeft: `3px solid #34d399`, borderRadius: 8 }}>
-              Best seller: <strong style={{ color: "#e6e8eb" }}>{winner.item}</strong> — {winner.units} sold
+            <div style={{ ...statCard, marginTop: 14, borderLeft: `3px solid #1d9e75`, borderRadius: 8 }}>
+              Best seller: <strong style={{ color: "#1a202c" }}>{winner.item}</strong> — {winner.units} sold
               {runnerUp && runnerUp.units > 0 && <> vs {runnerUp.units} for {runnerUp.item}{runnerUp.units > 0 ? ` (${(winner.units / runnerUp.units).toFixed(1)}× more)` : ""}</>}
               {runnerUp && runnerUp.units === 0 && <> — the others had no sales this period</>}.
             </div>
           )}
           <div style={{ overflowX: "auto", marginTop: 14 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+              <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #e2e8f0" }}>
                 <th style={th}>Item</th>
                 <th style={{ ...th, textAlign: "center" }}>Units sold</th>
                 <th style={{ ...th, textAlign: "right" }}>Revenue</th>
@@ -1317,10 +1317,10 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
               </tr></thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.key} style={{ borderBottom: "1px solid #2a2f37" }}>
+                  <tr key={r.key} style={{ borderBottom: "1px solid #f0f0f0" }}>
                     <td style={td}>
-                      <div>{r.item} <span style={{ color: "#7d8794", fontSize: 12 }}>· {r.vendor}</span></div>
-                      <div style={{ background: "#2a2f37", borderRadius: 3, height: 6, marginTop: 4 }}>
+                      <div>{r.item} <span style={{ color: "#888888", fontSize: 12 }}>· {r.vendor}</span></div>
+                      <div style={{ background: "#f0f0f0", borderRadius: 3, height: 6, marginTop: 4 }}>
                         <div style={{ width: `${(r.units / maxUnits) * 100}%`, background: ACCENT, height: 6, borderRadius: 3 }} />
                       </div>
                     </td>
@@ -1334,7 +1334,7 @@ function CompareItems({ periodSales, catalogue, itemMeta, onSaveMeta }: {
                       )}
                       <button onClick={() => setSelected((prev) => prev.filter((k) => k !== r.key))}
                         aria-label={`Remove ${r.item} from comparison`}
-                        style={{ background: "none", border: "none", color: "#7d8794", cursor: "pointer", fontSize: 16 }}>×</button>
+                        style={{ background: "none", border: "none", color: "#888888", cursor: "pointer", fontSize: 16 }}>×</button>
                     </td>
                   </tr>
                 ))}
@@ -1404,17 +1404,17 @@ function ProductPricing({ items, productMap, uploadedMin, onSave, onImport }: {
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>Product pricing & reorder levels</h2>
-      <p style={{ color: "#aab2bd", fontSize: 14 }}>Set cost and sales price (these power the Revenue tab), and override the reorder minimum / maximum if the uploaded value is out of date. A minimum drives the &quot;order now&quot; trigger; a maximum sets the suggested &quot;order up to&quot; quantity.</p>
+      <p style={{ color: "#555555", fontSize: 14 }}>Set cost and sales price (these power the Revenue tab), and override the reorder minimum / maximum if the uploaded value is out of date. A minimum drives the &quot;order now&quot; trigger; a maximum sets the suggested &quot;order up to&quot; quantity.</p>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12, paddingBottom: 14, borderBottom: "1px solid #333a44" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12, paddingBottom: 14, borderBottom: "1px solid #e2e8f0" }}>
         <label style={{ ...btnPrimary, opacity: importing ? 0.6 : 1 }}>
           {importing ? "Importing…" : "Import prices from CSV"}
           <input type="file" accept=".csv" style={{ display: "none" }} disabled={importing}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
         </label>
-        <span style={{ color: "#9aa3ad", fontSize: 13 }}>Use a report with “Avg Cost” and “Sales Price” columns.</span>
-        {importMsg && <span style={{ color: importMsg.startsWith("Import failed") ? "#f0a3a3" : "#34d399", fontSize: 13 }}>{importMsg}</span>}
-        <span style={{ color: "#7d8794", fontSize: 13, marginLeft: "auto" }}>Pricing last updated: {fmtDate(pricingUpdatedAt(productMap))}</span>
+        <span style={{ color: "#777777", fontSize: 13 }}>Use a report with “Avg Cost” and “Sales Price” columns.</span>
+        {importMsg && <span style={{ color: importMsg.startsWith("Import failed") ? "#9b1c1c" : "#1d9e75", fontSize: 13 }}>{importMsg}</span>}
+        <span style={{ color: "#888888", fontSize: 13, marginLeft: "auto" }}>Pricing last updated: {fmtDate(pricingUpdatedAt(productMap))}</span>
       </div>
 
       <input
@@ -1423,7 +1423,7 @@ function ProductPricing({ items, productMap, uploadedMin, onSave, onImport }: {
       />
       <div style={{ maxHeight: 380, overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #e2e8f0" }}>
             <th style={th}>Item</th><th style={th}>Vendor</th>
             <th style={{ ...th, textAlign: "center" }}>Cost ($)</th>
             <th style={{ ...th, textAlign: "center" }}>Price ($)</th>
@@ -1435,9 +1435,9 @@ function ProductPricing({ items, productMap, uploadedMin, onSave, onImport }: {
             {shown.map((r) => {
               const upMin = uploadedMin.get(r.item);
               return (
-              <tr key={r.item} style={{ borderBottom: "1px solid #2a2f37" }}>
+              <tr key={r.item} style={{ borderBottom: "1px solid #f0f0f0" }}>
                 <td style={td}>{r.item}</td>
-                <td style={{ ...td, color: "#9aa3ad" }}>{r.vendor}</td>
+                <td style={{ ...td, color: "#777777" }}>{r.vendor}</td>
                 <td style={{ ...td, textAlign: "center" }}>
                   <input type="number" min={0} step={0.01} value={val(r.item, "cost")}
                     onChange={(e) => onEdit(r.item, "cost", e.target.value)} onBlur={() => commit(r.item)}
@@ -1459,7 +1459,7 @@ function ProductPricing({ items, productMap, uploadedMin, onSave, onImport }: {
                     onChange={(e) => onEdit(r.item, "max", e.target.value)} onBlur={() => commit(r.item)}
                     style={{ ...input, width: 60 }} />
                 </td>
-                <td style={{ ...td, color: "#34d399" }}>{savedItem === r.item ? "✓" : ""}</td>
+                <td style={{ ...td, color: "#1d9e75" }}>{savedItem === r.item ? "✓" : ""}</td>
               </tr>
               );
             })}
@@ -1467,9 +1467,9 @@ function ProductPricing({ items, productMap, uploadedMin, onSave, onImport }: {
         </table>
       </div>
       {filtered.length > shown.length && (
-        <p style={{ color: "#9aa3ad", fontSize: 13, marginBottom: 0 }}>Showing first {shown.length} of {filtered.length}. Type in the search box to narrow down.</p>
+        <p style={{ color: "#777777", fontSize: 13, marginBottom: 0 }}>Showing first {shown.length} of {filtered.length}. Type in the search box to narrow down.</p>
       )}
-      {items.length === 0 && <p style={{ color: "#9aa3ad", fontSize: 14 }}>Upload an inventory file first — your products will appear here.</p>}
+      {items.length === 0 && <p style={{ color: "#777777", fontSize: 14 }}>Upload an inventory file first — your products will appear here.</p>}
     </div>
   );
 }
@@ -1490,8 +1490,8 @@ function ConfirmModal({ title, children, confirmLabel, cancelLabel, onConfirm, o
       style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
     >
       <div onClick={(e) => e.stopPropagation()} style={{ ...card, marginTop: 0, maxWidth: 460, width: "100%" }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 10px", color: "#f0a3a3" }}>{title}</h2>
-        <div style={{ color: "#c7cdd5", fontSize: 14, lineHeight: 1.55 }}>{children}</div>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 10px", color: "#9b1c1c" }}>{title}</h2>
+        <div style={{ color: "#444444", fontSize: 14, lineHeight: 1.55 }}>{children}</div>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 22, flexWrap: "wrap" }}>
           <button onClick={onCancel} style={btnGhost}>{cancelLabel}</button>
           <button onClick={onConfirm} style={{ ...btnPrimary, background: "#e2574e", color: "#fff" }}>{confirmLabel}</button>
@@ -1526,16 +1526,16 @@ function SnapshotCalendar({ importedDates, activeDate, onPick }: { importedDates
 
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
-      <label style={{ fontSize: 14, color: "#aab2bd" }}>Snapshot:</label>
+      <label style={{ fontSize: 14, color: "#555555" }}>Snapshot:</label>
       <button onClick={() => setOpen((o) => !o)} style={{ ...input, cursor: "pointer", minWidth: 150, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span>{activeDate || "Pick a date"}</span>
-        <span style={{ color: "#7d8794", fontSize: 11 }}>▾</span>
+        <span style={{ color: "#888888", fontSize: 11 }}>▾</span>
       </button>
 
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41, background: "#1e232b", border: "1px solid #333a44", borderRadius: 10, padding: 12, width: 280, boxShadow: "0 8px 24px rgba(0,0,0,.5)" }}>
+          <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, width: 280, boxShadow: "0 8px 24px rgba(0,0,0,.18)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <button onClick={prevMonth} style={{ ...btnGhost, padding: "2px 10px" }}>‹</button>
               <strong style={{ fontSize: 14 }}>{monthName} {ym.y}</strong>
@@ -1543,7 +1543,7 @@ function SnapshotCalendar({ importedDates, activeDate, onPick }: { importedDates
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 3 }}>
               {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-                <div key={i} style={{ textAlign: "center", fontSize: 11, color: "#7d8794" }}>{d}</div>
+                <div key={i} style={{ textAlign: "center", fontSize: 11, color: "#888888" }}>{d}</div>
               ))}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
@@ -1561,8 +1561,8 @@ function SnapshotCalendar({ importedDates, activeDate, onPick }: { importedDates
                     style={{
                       ...dayBtn,
                       cursor: hasUpload ? "pointer" : "default",
-                      background: isActive ? ACCENT : hasUpload ? "rgba(91,155,255,.18)" : "transparent",
-                      color: isActive ? "#0b1220" : hasUpload ? "#cfe0ff" : "#4b535e",
+                      background: isActive ? ACCENT : hasUpload ? "rgba(43,108,176,.12)" : "transparent",
+                      color: isActive ? "#ffffff" : hasUpload ? "#1a4d8c" : "#cccccc",
                       fontWeight: hasUpload ? 600 : 400,
                     }}
                   >
@@ -1571,8 +1571,8 @@ function SnapshotCalendar({ importedDates, activeDate, onPick }: { importedDates
                 );
               })}
             </div>
-            <div style={{ marginTop: 10, fontSize: 12, color: "#7d8794", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: "rgba(91,155,255,.5)", marginRight: 5 }} />has a report</span>
+            <div style={{ marginTop: 10, fontSize: 12, color: "#888888", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: "rgba(43,108,176,.5)", marginRight: 5 }} />has a report</span>
               <span>{monthUploads} this month</span>
             </div>
           </div>
@@ -1589,15 +1589,15 @@ function VendorSettings({ vendors, onChange }: { vendors: VendorRow[]; onChange:
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>Vendor settings</h2>
-      <p style={{ color: "#aab2bd", fontSize: 14 }}>Exclude vendors you don&apos;t reorder here, and set how many days each takes to deliver (drives the &quot;order now&quot; timing).</p>
+      <p style={{ color: "#555555", fontSize: 14 }}>Exclude vendors you don&apos;t reorder here, and set how many days each takes to deliver (drives the &quot;order now&quot; timing).</p>
       <div style={{ maxHeight: 320, overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #333a44" }}>
+          <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #e2e8f0" }}>
             <th style={th}>Vendor</th><th style={{ ...th, textAlign: "center" }}>Excluded</th><th style={{ ...th, textAlign: "center" }}>Lead days</th>
           </tr></thead>
           <tbody>
             {vendors.map((v) => (
-              <tr key={v.name} style={{ borderBottom: "1px solid #2a2f37", opacity: saving === v.name ? 0.5 : 1 }}>
+              <tr key={v.name} style={{ borderBottom: "1px solid #f0f0f0", opacity: saving === v.name ? 0.5 : 1 }}>
                 <td style={td}>{v.name}</td>
                 <td style={{ ...td, textAlign: "center" }}>
                   <input type="checkbox" checked={v.excluded} onChange={() => toggle(v)} />
@@ -1615,14 +1615,14 @@ function VendorSettings({ vendors, onChange }: { vendors: VendorRow[]; onChange:
 }
 
 // Dark interface palette.
-const ACCENT = "#5b9bff";
-const dropZone: React.CSSProperties = { border: "2px dashed #3a414c", borderRadius: 8, padding: "48px 20px", textAlign: "center", marginTop: 24, transition: "all .15s" };
-const card: React.CSSProperties = { background: "#1e232b", borderRadius: 10, padding: 24, marginTop: 24, border: "1px solid #333a44", boxShadow: "0 1px 3px rgba(0,0,0,.3)" };
-const statCard: React.CSSProperties = { background: "#232932", borderRadius: 10, padding: 16, border: "1px solid #333a44", boxShadow: "0 1px 3px rgba(0,0,0,.3)" };
-const btnPrimary: React.CSSProperties = { background: ACCENT, color: "#0b1220", border: "none", borderRadius: 6, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-block" };
-const btnGhost: React.CSSProperties = { background: "#232932", color: ACCENT, border: "1px solid #3a414c", borderRadius: 6, padding: "9px 16px", fontSize: 14, cursor: "pointer" };
-const input: React.CSSProperties = { border: "1px solid #3a414c", borderRadius: 6, padding: "7px 10px", fontSize: 14, background: "#14181e", color: "#e6e8eb" };
-const th: React.CSSProperties = { padding: "8px 10px", fontWeight: 600, color: "#aab2bd" };
+const ACCENT = "#2b6cb0";
+const dropZone: React.CSSProperties = { border: "2px dashed #cbd5e0", borderRadius: 8, padding: "48px 20px", textAlign: "center", marginTop: 24, transition: "all .15s" };
+const card: React.CSSProperties = { background: "#ffffff", borderRadius: 10, padding: 24, marginTop: 24, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
+const statCard: React.CSSProperties = { background: "#f7fafc", borderRadius: 10, padding: 16, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
+const btnPrimary: React.CSSProperties = { background: ACCENT, color: "#ffffff", border: "none", borderRadius: 6, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-block" };
+const btnGhost: React.CSSProperties = { background: "#f7fafc", color: ACCENT, border: "1px solid #cbd5e0", borderRadius: 6, padding: "9px 16px", fontSize: 14, cursor: "pointer" };
+const input: React.CSSProperties = { border: "1px solid #cbd5e0", borderRadius: 6, padding: "7px 10px", fontSize: 14, background: "#ffffff", color: "#1a202c" };
+const th: React.CSSProperties = { padding: "8px 10px", fontWeight: 600, color: "#555555" };
 const td: React.CSSProperties = { padding: "8px 10px" };
-const errBox: React.CSSProperties = { background: "#3a1d1d", color: "#f0a3a3", padding: "12px 16px", borderRadius: 8, marginTop: 16, fontSize: 14, border: "1px solid #5a2a2a" };
-const warnBox: React.CSSProperties = { background: "#2e2a1a", color: "#e6c97a", padding: "12px 16px", borderRadius: 8, marginTop: 12, fontSize: 14, border: "1px solid #4a4226" };
+const errBox: React.CSSProperties = { background: "#fde8e8", color: "#9b1c1c", padding: "12px 16px", borderRadius: 8, marginTop: 16, fontSize: 14, border: "1px solid #f5c6c6" };
+const warnBox: React.CSSProperties = { background: "#fef6e7", color: "#92591a", padding: "12px 16px", borderRadius: 8, marginTop: 12, fontSize: 14, border: "1px solid #f0e0b0" };

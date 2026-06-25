@@ -10,10 +10,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <head>
         <style>{`
-          html { color-scheme: dark; }
-          ::selection { background: #5b9bff; color: #0b1220; }
-          input::placeholder { color: #6b7480; }
-          input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
+          ::selection { background: #2b6cb0; color: #fff; }
+          input::placeholder { color: #aaa; }
         `}</style>
       </head>
       <body
@@ -21,8 +19,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           margin: 0,
           fontFamily:
             "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-          background: "#0f1217",
-          color: "#e6e8eb",
+          background: "#f6f7f9",
+          color: "#1a1a1a",
         }}
       >
         {children}
