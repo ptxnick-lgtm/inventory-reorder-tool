@@ -117,3 +117,21 @@ insert into vendors (name, lead_days, excluded) values
   ('Wild Herb Soap Co', 14, true),
   ('Xymogen EP', 14, false)
 on conflict (name) do nothing;
+
+-- ============================================================
+-- Security: lock the database so only signed-in users can read/write.
+-- Run this AFTER creating a login user (Authentication → Add user) and after
+-- the auth-enabled app is deployed. Enabling RLS with these policies denies the
+-- anonymous public key and allows any authenticated session full access.
+-- ============================================================
+alter table snapshots       enable row level security;
+alter table imported_files  enable row level security;
+alter table vendors         enable row level security;
+alter table products        enable row level security;
+alter table item_flags      enable row level security;
+
+create policy "authenticated all" on snapshots      for all to authenticated using (true) with check (true);
+create policy "authenticated all" on imported_files for all to authenticated using (true) with check (true);
+create policy "authenticated all" on vendors        for all to authenticated using (true) with check (true);
+create policy "authenticated all" on products       for all to authenticated using (true) with check (true);
+create policy "authenticated all" on item_flags     for all to authenticated using (true) with check (true);

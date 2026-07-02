@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { parseCSVText, parseXLSX, parsePricingCSV, ParseResult } from "@/lib/parser";
 import { classify, inventoryChanges, ClassifiedItem, TIER_META, Tier, SnapshotRow } from "@/lib/classify";
 import {
+  supabase,
   fetchVendors, fetchAllSnapshots, insertSnapshot, fetchImportedDates,
   updateVendor, addVendor, fetchProducts, upsertProduct, upsertProducts, deleteSnapshot,
   fetchItemFlags, saveItemMeta, VendorRow, ProductRow,
@@ -65,6 +66,14 @@ export default function Page() {
   const [dragOver, setDragOver] = useState(false);
   const [booting, setBooting] = useState(true);
   const [loadPct, setLoadPct] = useState(0);
+  const [authState, setAuthState] = useState<"loading" | "out" | "in">("loading");
+
+  // Track the Supabase auth session; the app only loads data once signed in.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setAuthState(data.session ? "in" : "out"));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => setAuthState(session ? "in" : "out"));
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   const loadDb = useCallback(async () => {
     try {
@@ -83,7 +92,7 @@ export default function Page() {
     }
   }, []);
 
-  useEffect(() => { loadDb().finally(() => setBooting(false)); }, [loadDb]);
+  useEffect(() => { if (authState === "in") { setBooting(true); loadDb().finally(() => setBooting(false)); } }, [authState, loadDb]);
 
   // Re-run classification from snapshots already in memory (no network) — used
   // when only the selected date (or hidden-item flags) change.
@@ -241,16 +250,11 @@ export default function Page() {
 
   const tierCounts = (t: Tier) => classified?.filter((i) => i.tier === t).length ?? 0;
 
-  if (booting) {
-    return (
-      <PasswordGate>
-        <BootScreen pct={loadPct} />
-      </PasswordGate>
-    );
-  }
+  if (authState === "loading") return <BootScreen pct={0} />;
+  if (authState === "out") return <LoginScreen />;
+  if (booting) return <BootScreen pct={loadPct} />;
 
   return (
-    <PasswordGate>
     <main style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <h1 style={{ fontSize: 26, fontWeight: 600, margin: 0, color: "#1a202c" }}>
@@ -263,6 +267,7 @@ export default function Page() {
           <button onClick={() => { setShowSettings(false); setShowPricing(!showPricing); }} style={btnGhost}>
             {showPricing ? "Close pricing" : "Product pricing"}
           </button>
+          <button onClick={() => supabase.auth.signOut()} style={btnGhost}>Sign out</button>
         </div>
       </div>
       <div style={{ height: 2, background: ACCENT, borderRadius: 2, margin: "10px 0 0", maxWidth: 160 }} />
@@ -368,12 +373,9 @@ export default function Page() {
         </span>
       </footer>
     </main>
-    </PasswordGate>
   );
 }
 
-// Simple shared-password gate. Note: this is a convenience lock for the UI — the
-// real data protection is Supabase row-level security on the database side.
 function BootScreen({ pct }: { pct: number }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -389,39 +391,42 @@ function BootScreen({ pct }: { pct: number }) {
   );
 }
 
-function PasswordGate({ children }: { children: React.ReactNode }) {
-  const [unlocked, setUnlocked] = useState(false);
-  const [ready, setReady] = useState(false);
+// Real login via Supabase Auth. The database is locked (row-level security) so
+// it only responds to a signed-in session — the public key alone can't read data.
+function LoginScreen() {
+  const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
-  const [err, setErr] = useState(false);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    setUnlocked(localStorage.getItem("ir_unlocked") === "yes");
-    setReady(true);
-  }, []);
-
-  if (!ready) return null;
-  if (unlocked) return <>{children}</>;
-
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pw === "1287") { localStorage.setItem("ir_unlocked", "yes"); setUnlocked(true); }
-    else { setErr(true); setPw(""); }
+    setBusy(true); setErr("");
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw });
+    if (error) setErr(error.message);
+    setBusy(false);
+    // On success, the auth listener flips the app into the signed-in state.
   };
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <form onSubmit={submit} style={{ ...card, marginTop: 0, width: "100%", maxWidth: 340, textAlign: "center" }}>
+      <form onSubmit={submit} style={{ ...card, marginTop: 0, width: "100%", maxWidth: 360, textAlign: "center" }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", color: "#1a202c" }}>Inventory Reorder Tool</h1>
-        <p style={{ color: "#555555", fontSize: 14, marginTop: 0 }}>Enter the password to continue.</p>
+        <p style={{ color: "#555555", fontSize: 14, marginTop: 0 }}>Sign in to continue.</p>
         <input
-          type="password" autoFocus value={pw}
-          onChange={(e) => { setPw(e.target.value); setErr(false); }}
-          placeholder="Password"
-          style={{ ...input, width: "100%", textAlign: "center", fontSize: 16, padding: "10px 12px", boxSizing: "border-box" }}
+          type="email" autoFocus value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+          placeholder="Email"
+          style={{ ...input, width: "100%", fontSize: 16, padding: "10px 12px", boxSizing: "border-box", marginBottom: 8 }}
         />
-        {err && <p style={{ color: "#9b1c1c", fontSize: 13, margin: "10px 0 0" }}>Incorrect password.</p>}
-        <button type="submit" style={{ ...btnPrimary, width: "100%", marginTop: 14 }}>Unlock</button>
+        <input
+          type="password" value={pw} onChange={(e) => { setPw(e.target.value); setErr(""); }}
+          placeholder="Password"
+          style={{ ...input, width: "100%", fontSize: 16, padding: "10px 12px", boxSizing: "border-box" }}
+        />
+        {err && <p style={{ color: "#9b1c1c", fontSize: 13, margin: "10px 0 0" }}>{err}</p>}
+        <button type="submit" disabled={busy} style={{ ...btnPrimary, width: "100%", marginTop: 14, opacity: busy ? 0.6 : 1 }}>
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
       </form>
     </div>
   );
