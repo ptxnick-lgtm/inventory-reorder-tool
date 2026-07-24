@@ -764,6 +764,16 @@ function FlaggedTab({ itemMeta, catalogue, onSaveMeta, productMap, uploadedMin, 
 
 const cartKey = (i: { item: string; vendor: string }) => i.item + "||" + i.vendor;
 
+// Shown on items with too little history to trust the suggested quantity yet.
+function NewBadge() {
+  return (
+    <span title="Too new to estimate a reliable quantity — use judgement before ordering"
+      style={{ background: "#fff4e5", color: "#a0670a", fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap" }}>
+      New
+    </span>
+  );
+}
+
 function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta, productMap, uploadedMin, onSaveReorder }: {
   items: ClassifiedItem[];
   tier: Tier;
@@ -813,7 +823,7 @@ function TierTable({ items, tier, cart, onToggle, onClear, itemMeta, onSaveMeta,
                   <tr key={idx} style={{ borderBottom: "1px solid #f0f0f0", opacity: inCart ? 0.5 : 1 }}>
                     <td style={td}>{i.vendor}</td>
                     <td style={{ ...td, textDecoration: inCart ? "line-through" : "none" }}>
-                      <div>{i.item}</div>
+                      <div>{i.item} {i.isNew && <NewBadge />}</div>
                       {tagList.length > 0 && (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
                           {tagList.map((t) => (
@@ -905,6 +915,7 @@ function VendorView({ items, cart, onToggle, onClear, itemMeta, onSaveMeta, prod
                         <td style={{ ...td, borderLeft: `4px solid ${color}` }}>
                           <span style={{ background: `${color}22`, color, fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 999, marginRight: 6 }}>{TIER_META[i.tier].label}</span>
                           <span style={{ textDecoration: inCart ? "line-through" : "none" }}>{i.item}</span>
+                          {i.isNew && <> <NewBadge /></>}
                           {tagList.length > 0 && (
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
                               {tagList.map((t) => <span key={t} style={{ background: "#e6f0fa", color: "#2b6cb0", fontSize: 11, padding: "1px 7px", borderRadius: 999 }}>{t}</span>)}

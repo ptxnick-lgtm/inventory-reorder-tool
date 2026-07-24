@@ -19,6 +19,7 @@ export interface ClassifiedItem {
   consumptionPerWeek: number | null;
   suggestedQty: number | null;
   reorderMin: number | null;
+  isNew: boolean;
   reason: string;
   history: { date: string; qoh: number; po: number }[];
 }
@@ -34,6 +35,9 @@ export interface ClassifyOptions {
 }
 
 const MS_PER_DAY = 86400000;
+// Need at least this many snapshots before trusting a velocity estimate — fewer
+// than this and a single quick early sale would extrapolate into a wild rate.
+const MIN_HISTORY = 5;
 
 function weeksBetween(a: string, b: string): number {
   const d = (new Date(b).getTime() - new Date(a).getTime()) / MS_PER_DAY / 7;
@@ -43,7 +47,7 @@ function weeksBetween(a: string, b: string): number {
 // Consumption = sum of decreases in qoh across consecutive snapshots, ignoring increases (restocks).
 // Returns units consumed per week, or null if not enough history.
 function consumptionPerWeek(hist: { date: string; qoh: number }[]): number | null {
-  if (hist.length < 2) return null;
+  if (hist.length < MIN_HISTORY) return null;
   let consumed = 0;
   let weeks = 0;
   for (let i = 1; i < hist.length; i++) {
@@ -166,6 +170,7 @@ export function classify(
       consumptionPerWeek: cpw,
       suggestedQty,
       reorderMin,
+      isNew: recs.length < MIN_HISTORY,
       reason,
       history: hist,
     });
