@@ -213,7 +213,9 @@ export interface InventoryChange {
 
 // Net change in on-hand for each item between two snapshot dates. A rise means
 // stock arrived (orders received); a drop means stock left (sales). Items with
-// no change are omitted. Excluded vendors are skipped.
+// no change are omitted, and excluded vendors are skipped. Only items present in
+// the current snapshot are counted — an item that was dropped from the report
+// entirely is treated as removed, not sold, so it can't inflate sales/revenue.
 export function inventoryChanges(
   snapshots: SnapshotRow[],
   date: string,
@@ -231,17 +233,14 @@ export function inventoryChanges(
     if (s.snapshot_date === prevDate) prev.set(k, s);
     else if (s.snapshot_date === date) curr.set(k, s);
   }
-  const keys = new Set([...prev.keys(), ...curr.keys()]);
   const out: InventoryChange[] = [];
-  for (const k of keys) {
-    const p = prev.get(k);
-    const c = curr.get(k);
-    const prevQoh = p ? p.qoh : 0;
-    const qoh = c ? c.qoh : 0;
-    const delta = qoh - prevQoh;
+  // Iterate only items in the current snapshot; ones that vanished from the
+  // report (in prev, not curr) are ignored rather than counted as a sale.
+  for (const [k, c] of curr) {
+    const prevQoh = prev.get(k)?.qoh ?? 0;
+    const delta = c.qoh - prevQoh;
     if (delta === 0) continue;
-    const ref = c || p!;
-    out.push({ item: ref.item, vendor: ref.vendor, prevQoh, qoh, delta });
+    out.push({ item: c.item, vendor: c.vendor, prevQoh, qoh: c.qoh, delta });
   }
   return out;
 }
